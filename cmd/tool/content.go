@@ -17,6 +17,7 @@ type contentCard struct {
 	subjectName string
 	brand       string
 	title       string
+	skus        []string
 	createdAt   string
 	updatedAt   string
 	trashedAt   string
@@ -32,10 +33,16 @@ func (c contentCard) isTrashed() bool {
 }
 
 // newCards создает новый список карточек полученных из api
-func newCards(wbcs *wbapi.ContentCards) *[]contentCard {
-	var cards *[]contentCard = &[]contentCard{}
+func newCards(wbcs *wbapi.ContentCards) []*contentCard {
+	var cards []*contentCard
 
 	for _, c := range wbcs.Cards {
+		var skus []string
+
+		for _, s := range c.Sizes {
+			skus = append(skus, s.Skus...)
+		}
+
 		card := &contentCard{
 			nmID:        c.NmID,
 			imtID:       c.ImtID,
@@ -44,11 +51,12 @@ func newCards(wbcs *wbapi.ContentCards) *[]contentCard {
 			subjectName: c.SubjectName,
 			brand:       c.Brand,
 			title:       c.Title,
+			skus:        skus,
 			createdAt:   c.CreatedAt,
 			updatedAt:   c.UpdatedAt,
 			trashedAt:   c.TrashedAt,
 		}
-		*cards = append(*cards, *card)
+		cards = append(cards, card)
 	}
 	return cards
 }
@@ -58,28 +66,28 @@ func contentSync(wbClient *wbapi.Client, job gocron.Job) {
 	// Синнхронизация корзины
 	wbCards, err := wbClient.GetCardsTrash()
 	if err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при получении карточек в корзине %s", err.Error()))
+		slog.Error(fmt.Sprintf("При получении карточек произошла ошибка %s", err.Error()))
 		return
 	}
 	cards := newCards(wbCards)
-	slog.Info(fmt.Sprintf("Получено %d карточек в корзине", len(*cards)))
+	slog.Info(fmt.Sprintf("Получено %d карточек в корзине", len(cards)))
 
 	if err := pdb.syncContentCards(cards); err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при сохранении карточек в БД %s", err.Error()))
+		slog.Error(fmt.Sprintf("При сохранении карточек в БД произошла ошибка %s", err.Error()))
 		return
 	}
 
 	// Синхронизация карточек
 	wbCards, err = wbClient.GetCards()
 	if err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при получении карточек %s", err.Error()))
+		slog.Error(fmt.Sprintf("При получении карточек произошла ошибка %s", err.Error()))
 		return
 	}
 	cards = newCards(wbCards)
-	slog.Info(fmt.Sprintf("Получено %d карточек", len(*cards)))
+	slog.Info(fmt.Sprintf("Получено %d карточек", len(cards)))
 
 	if err := pdb.syncContentCards(cards); err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при сохранении карточек в БД %s", err.Error()))
+		slog.Error(fmt.Sprintf("При сохранении карточек в БД произошла ошибка %s", err.Error()))
 		return
 	}
 

@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS wb_content_cards (
     nm_id int NOT NULL,
-    imtID int,
+    imt_id int,
     vendor_code varchar(64) NOT NULL,
     subject_id int NOT NULL,
     subject_name varchar(128) NOT NULL,

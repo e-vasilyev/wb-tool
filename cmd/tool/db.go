@@ -54,29 +54,33 @@ func (p *pClinet) migration() error {
 }
 
 // syncContentCards синхронизирует данные получение с api в БД
-func (p *pClinet) syncContentCards(cs *[]contentCard) error {
+func (p *pClinet) syncContentCards(cs []*contentCard) error {
 	tx, err := p.pool.Begin(p.ctx)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при создании транзакции: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При создании транзакции произовшла ошибка %s", err.Error()))
 		return err
 	}
 
 	defer tx.Rollback(p.ctx)
 
-	for _, card := range *cs {
+	for _, card := range cs {
 		if card.isTrashed() {
-			err = p.upsertContentTrashedCard(tx, card)
+			err = p.upsertContentTrashedCard(tx, *card)
 		} else {
-			err = p.upsertContentCard(tx, card)
+			err = p.upsertContentCard(tx, *card)
 		}
 
 		if err != nil {
 			return err
 		}
+
+		if err := p.upsetSkus(tx, *card); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(pdb.ctx); err != nil {
-		slog.Error(fmt.Sprintf("Ошибка при коммите изменений: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
 	slog.Info(fmt.Sprintf("Карточки успешно добавлены в БД"))
@@ -98,7 +102,7 @@ func (p *pClinet) upsertContentTrashedCard(tx pgx.Tx, card contentCard) error {
 		time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Ошибка записи карточки из корзины в базу данных: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При записи карточки %d в базу данных возникла ошибка %s", card.nmID, err.Error()))
 		return err
 	}
 
@@ -109,19 +113,66 @@ func (p *pClinet) upsertContentTrashedCard(tx pgx.Tx, card contentCard) error {
 func (p *pClinet) upsertContentCard(tx pgx.Tx, card contentCard) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`INSERT INTO wb_content_cards (nm_id, imtID, vendor_code, subject_id, subject_name, brand, title, trashed, updated_timestamp)
+		`INSERT INTO wb_content_cards (nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title, trashed, updated_timestamp)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (nm_id) DO UPDATE
-				SET imtID = $2, vendor_code = $3, subject_id = $4, subject_name = $5, 
+				SET imt_id = $2, vendor_code = $3, subject_id = $4, subject_name = $5, 
 					brand = $6, title = $7, trashed = $8, updated_timestamp = $9`,
 		card.nmID, card.imtID, card.vendorCode, card.subjectID,
 		card.subjectName, card.brand, card.title, false,
 		time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Ошибка записи карточки в базу данных: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При записи карточки %d в базу данных возникла ошибка %s", card.nmID, err.Error()))
 		return err
 	}
 
 	return nil
+}
+
+// upsetSkus добавляет записи по бракодам в БД
+func (p *pClinet) upsetSkus(tx pgx.Tx, card contentCard) error {
+	for _, sku := range card.skus {
+		_, err := tx.Exec(
+			p.ctx,
+			`INSERT INTO wb_content_skus (sku, nm_id)
+				VALUES ($1, $2)
+				ON CONFLICT (sku) DO NOTHING`,
+			sku, card.nmID,
+		)
+		if err != nil {
+			slog.Error(fmt.Sprintf("При записи баркода %s в базу дунных возникла ошибка %s", sku, err.Error()))
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Получение списка карточек из БД
+func (p *pClinet) getCards() ([]*contentCard, error) {
+	rows, err := p.pool.Query(
+		p.ctx,
+		`SELECT nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title,
+			FROM wb_content_cards WHERE deleted IS NOT NULL`,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var card = &contentCard{}
+
+	_, err = pgx.ForEachRow(rows, []any{&card.nmID, &card.vendorCode}, func() error {
+		slog.Debug(fmt.Sprintf("Получена строка %d - %s", card.nmID, card.vendorCode))
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }

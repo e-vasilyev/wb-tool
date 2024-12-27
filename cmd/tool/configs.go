@@ -31,4 +31,5 @@ func setConfig() {
 
 	// Настройки задач
 	config.SetDefault("cron.content_cards_sync", "0 */4 * * *")
+	config.SetDefault("cron.stoks_sync", "0 */2 * * *")
 }

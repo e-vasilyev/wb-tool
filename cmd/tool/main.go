@@ -40,7 +40,7 @@ func main() {
 	// Создание клиента WB API
 	wbClient := wbapi.NewClientWithOptions(token, wbapi.SetClientLogger(logger))
 	if err := wbClient.Ping(); err != nil {
-		slog.Error(fmt.Sprintf("Критическая ошибка при проверке подключения к API: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При подключении к API получена критическая ошибка %s", err.Error()))
 		os.Exit(1)
 	} else {
 		slog.Info("Проверка подключения к API прошла успешно")
@@ -49,7 +49,7 @@ func main() {
 	// Подключение к БД
 	pool, err := connectToDB(pdb.ctx)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Критическая ошибка при подключении к базе данных: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При подключении к базе данных получена критическая ошибка %s", err.Error()))
 		os.Exit(1)
 	}
 	pdb.pool = pool
@@ -57,16 +57,21 @@ func main() {
 
 	// Миграция базы данных
 	if err := pdb.migration(); err != nil {
-		slog.Error(fmt.Sprintf("Критическая ошибка при миграции базы данных: %s", err.Error()))
+		slog.Error(fmt.Sprintf("При миграции данных получена критическая ошибка: %s", err.Error()))
 		os.Exit(1)
 	}
 
 	// Запуск задач
 	scheduler := gocron.NewScheduler(time.Local)
+
 	jobContentSync, err := scheduler.Cron(config.GetString("cron.content_cards_sync")).StartImmediately().DoWithJobDetails(contentSync, wbClient)
-	// jobReadZipFiles, _ := scheduler.Every(60).Second().Do(parseZipFiles)
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
+
+	// jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stoksSync, wbClient)
+	// jobStoksSync.Name("Синхронизация остатков")
+	// jobStoksSync.SingletonMode()
+	// jobReadZipFiles, _ := scheduler.Every(60).Second().Do(parseZipFiles)
 
 	scheduler.RegisterEventListeners(
 		gocron.BeforeJobRuns(func(jobName string) {
