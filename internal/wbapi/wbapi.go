@@ -29,7 +29,8 @@ func (fn optionFunc) apply(c *Client) {
 
 // ClientBaseURL список базовых URL до различных API
 type ClientBaseURL struct {
-	content string
+	content     string
+	marketplace string
 }
 
 // SetClientBaseURL задает базовые URL
@@ -46,51 +47,10 @@ func SetClientLogger(logger *slog.Logger) ClientOptions {
 	})
 }
 
-// // httpResponce400 ответ с кодом 400
-// type httpResponce400 struct {
-// 	Data      string `json:"data"`
-// 	Error     bool   `json:"error"`
-// 	ErrorText string `json:"errorText"`
-// }
-
-// // httpResponce401 ответ с кодом 401
-// type httpResponce401 struct {
-// 	Data      string `json:"data"`
-// 	Detail    string `json:"detail"`
-// 	Code      string `json:"code"`
-// 	RequestId string `json:"requestId"`
-// 	Origin    string `json:"origin"`
-// 	Status    int    `json:"status"`
-// 	SatusText string `json:"statusText"`
-// 	Timestamp string `json:"timestamp"`
-// }
-
-// // httpResponce413 ответ с кодом 413
-// type httpResponce413 struct {
-// 	Title     string `json:"title"`
-// 	Detail    string `json:"detail"`
-// 	Code      string `json:"code"`
-// 	RequestId string `json:"requestId"`
-// 	Origin    string `json:"origin"`
-// 	Status    int    `json:"status"`
-// 	SatusText string `json:"statusText"`
-// }
-
-// // httpResponce429 ответ с кодом 429
-// type httpResponce429 struct {
-// 	Title     string `json:"title"`
-// 	Detail    string `json:"detail"`
-// 	Code      string `json:"code"`
-// 	RequestId string `json:"requestId"`
-// 	Origin    string `json:"origin"`
-// 	Status    int    `json:"status"`
-// 	SatusText string `json:"statusText"`
-// 	Timestamp string `json:"timestamp"`
-// }
-
 // defaultClientBaseURL значение по умолчанию базовых URL
 var defaultClientBaseURL *ClientBaseURL = &ClientBaseURL{
-	content: "https://content-api.wildberries.ru",
+	content:     "https://content-api.wildberries.ru",
+	marketplace: "https://marketplace-api.wildberries.ru",
 }
 
 // NewClient создает клиента подключения
@@ -116,9 +76,16 @@ func NewClientWithOptions(token string, opts ...ClientOptions) *Client {
 		for {
 			select {
 			case <-time.NewTicker(time.Minute).C:
-				client.logger.Debug(fmt.Sprintf("Количество запросов в минуту к контенту: %d", len(contentRequestCount)))
-				for i := 0; i < len(contentRequestCount); i++ {
+				c := len(contentRequestCount)
+				client.logger.Debug(fmt.Sprintf("Количество запросов в минуту к контенту: %d", c))
+				for i := 0; i < c; i++ {
 					<-contentRequestCount
+				}
+			case <-time.NewTicker(time.Minute).C:
+				c := len(marketplaceRequestCount)
+				client.logger.Debug(fmt.Sprintf("Количество запросов в минуту к маркетплейсу: %d", c))
+				for i := 0; i < c; i++ {
+					<-marketplaceRequestCount
 				}
 			}
 		}
@@ -132,6 +99,11 @@ func (c Client) Ping() error {
 	if err := c.contentPing(); err != nil {
 		return err
 	}
+
+	if err := c.marketplacePing(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -142,6 +114,15 @@ func (c Client) contentPing() error {
 	url := fmt.Sprintf("%s/%s", c.baseURL.content, contentPathPing)
 
 	return c.requestPing(url, contentRequestCount)
+}
+
+// marketplacePing проверяет доступность API Marketplace
+func (c Client) marketplacePing() error {
+	c.logger.Debug("Проверка достпности API маркетплейса")
+
+	url := fmt.Sprintf("%s/%s", c.baseURL.marketplace, marketplacePathPing)
+
+	return c.requestPing(url, marketplaceRequestCount)
 }
 
 // requestPing делает запрос ping к указанному ресурсу

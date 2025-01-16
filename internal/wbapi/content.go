@@ -172,6 +172,7 @@ func (c *Client) getCards(url string, jsonBody []byte) (*ContentCards, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defer res.Body.Close()
 
 	if err := respCodeCheck(res); err != nil {
@@ -179,9 +180,6 @@ func (c *Client) getCards(url string, jsonBody []byte) (*ContentCards, error) {
 	}
 
 	err = json.NewDecoder(res.Body).Decode(contentCards)
-	if err != nil {
-		return nil, err
-	}
 
-	return contentCards, nil
+	return contentCards, err
 }

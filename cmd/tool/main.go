@@ -68,10 +68,9 @@ func main() {
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
 
-	// jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stoksSync, wbClient)
+	// jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stocksSync, wbClient)
 	// jobStoksSync.Name("Синхронизация остатков")
 	// jobStoksSync.SingletonMode()
-	// jobReadZipFiles, _ := scheduler.Every(60).Second().Do(parseZipFiles)
 
 	scheduler.RegisterEventListeners(
 		gocron.BeforeJobRuns(func(jobName string) {

@@ -20,6 +20,12 @@ type pClinet struct {
 	ctx  context.Context
 }
 
+// contentSkusTable описывает структуру таблицы wb_content_skus
+type contentSkusTable struct {
+	NmID uint32 `db:"nm_id"`
+	Sku  string `db:"sku"`
+}
+
 // connectToDB открывает пул соединений
 func connectToDB(ctx context.Context) (*pgxpool.Pool, error) {
 	var url = config.GetString("database.url")
@@ -53,18 +59,18 @@ func (p *pClinet) migration() error {
 	return nil
 }
 
-// syncContentCards синхронизирует данные получение с api в БД
-func (p *pClinet) syncContentCards(cs []*contentCard) error {
+// syncContentCards синхронизирует данные полученные с api в БД
+func (p *pClinet) syncContentCards(cs *contentCards) error {
 	tx, err := p.pool.Begin(p.ctx)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При создании транзакции произовшла ошибка %s", err.Error()))
+		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
 		return err
 	}
 
 	defer tx.Rollback(p.ctx)
 
-	for _, card := range cs {
-		if card.isTrashed() {
+	for _, card := range cs.cards {
+		if cs.trashed {
 			err = p.upsertContentTrashedCard(tx, *card)
 		} else {
 			err = p.upsertContentCard(tx, *card)
@@ -79,11 +85,22 @@ func (p *pClinet) syncContentCards(cs []*contentCard) error {
 		}
 	}
 
+	ids, err := cs.getNmIDsForDelete()
+
+	if err != nil {
+		slog.Error(fmt.Sprintf("При получении nmID для удаления произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	if err := p.markAsDeleted(tx, ids); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(pdb.ctx); err != nil {
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
-	slog.Info(fmt.Sprintf("Карточки успешно добавлены в БД"))
+	slog.Info(fmt.Sprintf("Карточки успешно синхронизировны"))
 
 	return nil
 }
@@ -149,12 +166,10 @@ func (p *pClinet) upsetSkus(tx pgx.Tx, card contentCard) error {
 	return nil
 }
 
-// Получение списка карточек из БД
-func (p *pClinet) getCards() ([]*contentCard, error) {
+// getContentSkusTable возвращает содержимое таблицы wb_content_skus из БД
+func (p *pClinet) getContentSkusTable() ([]*contentSkusTable, error) {
 	rows, err := p.pool.Query(
-		p.ctx,
-		`SELECT nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title,
-			FROM wb_content_cards WHERE deleted IS NOT NULL`,
+		p.ctx, "SELECT sku, nm_id FROM wb_content_skus",
 	)
 	if err != nil {
 		return nil, err
@@ -162,17 +177,97 @@ func (p *pClinet) getCards() ([]*contentCard, error) {
 
 	defer rows.Close()
 
-	var card = &contentCard{}
-
-	_, err = pgx.ForEachRow(rows, []any{&card.nmID, &card.vendorCode}, func() error {
-		slog.Debug(fmt.Sprintf("Получена строка %d - %s", card.nmID, card.vendorCode))
-
-		return nil
-	})
-
+	skus, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[contentSkusTable])
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	return skus, nil
 }
+
+// getTrashedNmIDsConentCardsTable получает массив nmID из таблицы карточек в корзине
+func (p *pClinet) getTrashedNmIDsConentCardsTable() ([]uint32, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT nm_id FROM wb_content_cards WHERE trashed is true and deleted is false",
+	)
+	if err != nil {
+		return []uint32{}, err
+	}
+
+	defer rows.Close()
+
+	nmIDs, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
+	if err != nil {
+		return []uint32{}, err
+	}
+
+	return nmIDs, nil
+}
+
+// getNmIDsConentCardsTable получает массив nmID из таблицы карточек
+func (p *pClinet) getNmIDsConentCardsTable() ([]uint32, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT nm_id FROM wb_content_cards WHERE trashed is false and deleted is false",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	nmIDs, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
+	if err != nil {
+		return nil, err
+	}
+
+	return nmIDs, nil
+}
+
+// Помечает как удаленный указаные nmID
+func (p *pClinet) markAsDeleted(tx pgx.Tx, ids []uint32) error {
+	for _, id := range ids {
+		_, err := tx.Exec(
+			p.ctx,
+			`UPDATE wb_content_cards SET deleted = $2, updated_timestamp = $3
+				WHERE nm_id=$1`,
+			id, true, time.Now().UTC().Format("2006-01-02 03:04:05"),
+		)
+		if err != nil {
+			slog.Error(fmt.Sprintf("При удалении карточки %d возникла ошибка %s", id, err.Error()))
+			return err
+		}
+
+	}
+
+	slog.Info(fmt.Sprintf("Удалено %d карточек в БД", len(ids)))
+
+	return nil
+}
+
+// Получение списка карточек из БД
+// func (p *pClinet) getCards() ([]*contentCard, error) {
+// 	rows, err := p.pool.Query(
+// 		p.ctx,
+// 		`SELECT nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title,
+// 			FROM wb_content_cards WHERE deleted IS NOT NULL`,
+// 	)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	defer rows.Close()
+
+// 	var card = &contentCard{}
+
+// 	_, err = pgx.ForEachRow(rows, []any{&card.nmID, &card.vendorCode}, func() error {
+// 		slog.Debug(fmt.Sprintf("Получена строка %d - %s", card.nmID, card.vendorCode))
+
+// 		return nil
+// 	})
+
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return nil, nil
+// }

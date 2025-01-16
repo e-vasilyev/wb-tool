@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS wb_content_skus (
     FOREIGN KEY (nm_id) REFERENCES wb_content_cards (nm_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS wb_marketplace_stocks (
+    sku varchar(16) NOT NULL,
+    nm_id int NOT NULL,
+    amount int NOT NULL,
+    PRIMARY KEY (sku),
+    FOREIGN KEY (nm_id) REFERENCES wb_content_cards (nm_id) ON DELETE CASCADE
+);
+
 -- CREATE TABLE IF NOT EXISTS wb_content_trash (
 --     nm_id int NOT NULL,
 --     PRIMARY KEY (sku),
