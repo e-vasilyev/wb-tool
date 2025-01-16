@@ -64,13 +64,13 @@ func main() {
 	// Запуск задач
 	scheduler := gocron.NewScheduler(time.Local)
 
-	jobContentSync, err := scheduler.Cron(config.GetString("cron.content_cards_sync")).StartImmediately().DoWithJobDetails(contentSync, wbClient)
+	jobContentSync, err := scheduler.Cron(config.GetString("cron.content_cards_sync")).DoWithJobDetails(contentSync, wbClient)
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
 
-	// jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stocksSync, wbClient)
-	// jobStoksSync.Name("Синхронизация остатков")
-	// jobStoksSync.SingletonMode()
+	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).DoWithJobDetails(stocksSync, wbClient)
+	jobStoksSync.Name("Синхронизация остатков")
+	jobStoksSync.SingletonMode()
 
 	scheduler.RegisterEventListeners(
 		gocron.BeforeJobRuns(func(jobName string) {

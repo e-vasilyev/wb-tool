@@ -147,7 +147,7 @@ func (p *pClinet) upsertContentCard(tx pgx.Tx, card contentCard) error {
 	return nil
 }
 
-// upsetSkus добавляет записи по бракодам в БД
+// upsetSkus обновляет записи по бракодам в БД
 func (p *pClinet) upsetSkus(tx pgx.Tx, card contentCard) error {
 	for _, sku := range card.skus {
 		_, err := tx.Exec(
@@ -166,10 +166,25 @@ func (p *pClinet) upsetSkus(tx pgx.Tx, card contentCard) error {
 	return nil
 }
 
+// deleteSku удаляет записи по бракодам в БД
+func (p *pClinet) deleteSku(tx pgx.Tx, sku string) error {
+	_, err := tx.Exec(
+		p.ctx,
+		`DELETE FROM wb_content_skus WHERE sku = $1`,
+		sku,
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При удалении баркода %s возникла ошибка %s", sku, err.Error()))
+		return err
+	}
+
+	return nil
+}
+
 // getContentSkusTable возвращает содержимое таблицы wb_content_skus из БД
 func (p *pClinet) getContentSkusTable() ([]*contentSkusTable, error) {
 	rows, err := p.pool.Query(
-		p.ctx, "SELECT sku, nm_id FROM wb_content_skus",
+		p.ctx, "SELECT sku, nm_id FROM wb_content_skus NATURAL JOIN wb_content_cards WHERE deleted is false",
 	)
 	if err != nil {
 		return nil, err
@@ -244,30 +259,52 @@ func (p *pClinet) markAsDeleted(tx pgx.Tx, ids []uint32) error {
 	return nil
 }
 
-// Получение списка карточек из БД
-// func (p *pClinet) getCards() ([]*contentCard, error) {
-// 	rows, err := p.pool.Query(
-// 		p.ctx,
-// 		`SELECT nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title,
-// 			FROM wb_content_cards WHERE deleted IS NOT NULL`,
-// 	)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+// syncMarketplaceStocks синхронизирует остатки полученные с api в БД
+func (p *pClinet) syncMarketplaceStocks(stocks map[string]uint32, skusRows []*contentSkusTable) error {
+	tx, err := p.pool.Begin(p.ctx)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
+		return err
+	}
 
-// 	defer rows.Close()
+	defer tx.Rollback(p.ctx)
 
-// 	var card = &contentCard{}
+	for _, row := range skusRows {
+		if _, ok := stocks[row.Sku]; ok {
+			if err := pdb.upsertMarketplaceStocks(tx, row.Sku, row.NmID, stocks[row.Sku]); err != nil {
+				return err
+			}
+		} else {
+			slog.Info(fmt.Sprintf("Для баркода %s остаток не найден. Баркод будет удален", row.Sku))
+			if err := pdb.deleteSku(tx, row.Sku); err != nil {
+				return err
+			}
+		}
+	}
 
-// 	_, err = pgx.ForEachRow(rows, []any{&card.nmID, &card.vendorCode}, func() error {
-// 		slog.Debug(fmt.Sprintf("Получена строка %d - %s", card.nmID, card.vendorCode))
+	if err := tx.Commit(pdb.ctx); err != nil {
+		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
+		return err
+	}
+	slog.Info(fmt.Sprintf("Остатки по складам продавца успешно синхронизировны"))
 
-// 		return nil
-// 	})
+	return nil
+}
 
-// 	if err != nil {
-// 		return nil, err
-// 	}
+// upsertMarketplaceStocks обновляет запись остатков по маркетплейсу в БД
+func (p *pClinet) upsertMarketplaceStocks(tx pgx.Tx, sku string, nmID uint32, ammount uint32) error {
+	_, err := tx.Exec(
+		p.ctx,
+		`INSERT INTO wb_marketplace_stocks (sku, nm_id, amount, updated_timestamp)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (sku) DO UPDATE
+				SET amount = $3, updated_timestamp = $4`,
+		sku, nmID, ammount, time.Now().UTC().Format("2006-01-02 03:04:05"),
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При записи остатка карточки %d (баркод %s) в базу данных возникла ошибка %s", nmID, sku, err.Error()))
+		return err
+	}
 
-// 	return nil, nil
-// }
+	return nil
+}

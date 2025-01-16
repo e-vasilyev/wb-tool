@@ -69,6 +69,8 @@ func newCards(wbcs *wbapi.ContentCards, trashed bool) *contentCards {
 
 // contentSync синхронизирует карточки с БД
 func contentSync(wbClient *wbapi.Client, job gocron.Job) {
+	defer slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
+
 	// Синнхронизация корзины
 	wbCards, err := wbClient.GetCardsTrash()
 	if err != nil {
@@ -96,8 +98,6 @@ func contentSync(wbClient *wbapi.Client, job gocron.Job) {
 		slog.Error(fmt.Sprintf("При сохранении карточек в БД произошла ошибка %s", err.Error()))
 		return
 	}
-
-	slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
 }
 
 // getNmIDsForDelete получает список nmID для удаления
