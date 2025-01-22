@@ -181,6 +181,21 @@ func (p *pClinet) deleteSku(tx pgx.Tx, sku string) error {
 	return nil
 }
 
+// deleteSku удаляет записи по остаткам на складах продавца в БД
+func (p *pClinet) deleteMarketplaceStockBySku(tx pgx.Tx, sku string) error {
+	_, err := tx.Exec(
+		p.ctx,
+		`DELETE FROM wb_marketplace_stocks WHERE sku = $1`,
+		sku,
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При удалении остатка по баркоду %s возникла ошибка %s", sku, err.Error()))
+		return err
+	}
+
+	return nil
+}
+
 // getContentSkusTable возвращает содержимое таблицы wb_content_skus из БД
 func (p *pClinet) getContentSkusTable() ([]*contentSkusTable, error) {
 	rows, err := p.pool.Query(
@@ -238,7 +253,7 @@ func (p *pClinet) getNmIDsConentCardsTable() ([]uint32, error) {
 	return nmIDs, nil
 }
 
-// Помечает как удаленный указаные nmID
+// Помечает как удаленные карточки с указанными nmID
 func (p *pClinet) markAsDeleted(tx pgx.Tx, ids []uint32) error {
 	for _, id := range ids {
 		_, err := tx.Exec(
@@ -260,7 +275,7 @@ func (p *pClinet) markAsDeleted(tx pgx.Tx, ids []uint32) error {
 }
 
 // syncMarketplaceStocks синхронизирует остатки полученные с api в БД
-func (p *pClinet) syncMarketplaceStocks(stocks map[string]uint32, skusRows []*contentSkusTable) error {
+func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*contentSkusTable) error {
 	tx, err := p.pool.Begin(p.ctx)
 	if err != nil {
 		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
@@ -270,15 +285,12 @@ func (p *pClinet) syncMarketplaceStocks(stocks map[string]uint32, skusRows []*co
 	defer tx.Rollback(p.ctx)
 
 	for _, row := range skusRows {
-		if _, ok := stocks[row.Sku]; ok {
-			if err := pdb.upsertMarketplaceStocks(tx, row.Sku, row.NmID, stocks[row.Sku]); err != nil {
+		if _, ok := mps.stocks[row.Sku]; ok {
+			if err := pdb.upsertMarketplaceStocks(tx, row.Sku, row.NmID, mps.getStock(row.Sku)); err != nil {
 				return err
 			}
 		} else {
-			slog.Info(fmt.Sprintf("Для баркода %s остаток не найден. Баркод будет удален", row.Sku))
-			if err := pdb.deleteSku(tx, row.Sku); err != nil {
-				return err
-			}
+			slog.Debug(fmt.Sprintf("Для баркода %s карточки %d остаток не найден", row.Sku, row.NmID))
 		}
 	}
 
@@ -307,4 +319,23 @@ func (p *pClinet) upsertMarketplaceStocks(tx pgx.Tx, sku string, nmID uint32, am
 	}
 
 	return nil
+}
+
+// getSkusMarketplaceStocksTable получает массив sku из таблицы карточек
+func (p *pClinet) getSkusMarketplaceStocksTable() ([]string, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT sku FROM wb_marketplace_stocks",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	skus, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+
+	return skus, nil
 }

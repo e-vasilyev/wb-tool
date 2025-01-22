@@ -10,8 +10,44 @@ import (
 
 // marketplaceStock описывает остаток по товару для известного sku
 type marketplaceStock struct {
-	sku    string
 	amount uint32
+}
+
+// marketplaceStock описывает остатки по товарам на складах продавца
+type marketplaceStocks struct {
+	stocks map[string]*marketplaceStock
+}
+
+// getStock возвращает остаток по всем складам продавца для известного sku
+func (m *marketplaceStocks) getStock(s string) uint32 {
+	return m.stocks[s].amount
+}
+
+// newMarketplsceStocks создает спиоск остатков на складах продавца.
+func newMarketplsceStocks(wbClient *wbapi.Client, skus []string) (*marketplaceStocks, error) {
+	wbWarehouses, err := wbClient.GetWarehouses()
+	if err != nil {
+		return nil, err
+	}
+
+	result := &marketplaceStocks{stocks: make(map[string]*marketplaceStock)}
+
+	for _, wbWarehouse := range wbWarehouses {
+		wbStocks, err := wbClient.GetStocks(*wbWarehouse, skus)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, wbStock := range wbStocks.Stocks {
+			if _, ok := result.stocks[wbStock.Sku]; ok {
+				result.stocks[wbStock.Sku].amount += wbStock.Amount
+			} else {
+				result.stocks[wbStock.Sku] = &marketplaceStock{amount: wbStock.Amount}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 // stocksSync синхронизирует остатки по карточкам
@@ -28,7 +64,7 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 		skus = append(skus, row.Sku)
 	}
 
-	stocks, err := getMarketplaceStocks(wbClient, skus)
+	stocks, err := newMarketplsceStocks(wbClient, skus)
 	if err != nil {
 		slog.Error(fmt.Sprintf("При получении остатков произошла ошибка %s", err.Error()))
 		return
@@ -40,31 +76,4 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 	}
 
 	slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
-}
-
-// getStocks получает список остатков через API WB
-func getMarketplaceStocks(wbClient *wbapi.Client, skus []string) (map[string]uint32, error) {
-	wbWarehouses, err := wbClient.GetWarehouses()
-	if err != nil {
-		return nil, err
-	}
-
-	var skusMap map[string]uint32 = make(map[string]uint32)
-
-	for _, wbWarehouse := range wbWarehouses {
-		wbStocks, err := wbClient.GetStocks(*wbWarehouse, skus)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, wbStock := range wbStocks.Stocks {
-			if _, ok := skusMap[wbStock.Sku]; ok {
-				skusMap[wbStock.Sku] += wbStock.Amount
-			} else {
-				skusMap[wbStock.Sku] = wbStock.Amount
-			}
-		}
-	}
-
-	return skusMap, nil
 }
