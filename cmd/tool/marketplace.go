@@ -23,6 +23,11 @@ func (m *marketplaceStocks) getStock(s string) uint32 {
 	return m.stocks[s].amount
 }
 
+// count возвращает количество бракодов
+func (m *marketplaceStocks) count() int {
+	return len(m.stocks)
+}
+
 // newMarketplsceStocks создает спиоск остатков на складах продавца.
 func newMarketplsceStocks(wbClient *wbapi.Client, skus []string) (*marketplaceStocks, error) {
 	wbWarehouses, err := wbClient.GetWarehouses()
@@ -76,4 +81,23 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 	}
 
 	slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
+}
+
+// getSkusForDelete получает список skus для удаления
+func (m *marketplaceStocks) getSkusForDelete() ([]string, error) {
+	var res []string
+
+	skus, err := pdb.getSkusMarketplaceStocksTable()
+	if err != nil {
+		return []string{}, err
+	}
+	slog.Info(fmt.Sprintf("Получено %d баркодов из БД остатков складов продавца", len(skus)))
+
+	for _, sku := range skus {
+		if _, ok := m.stocks[sku]; !ok {
+			res = append(res, sku)
+			slog.Info(fmt.Sprintf("Баркод %s пристутвует в БД остатков складов продавца, но отсутвует в магазине", sku))
+		}
+	}
+	return res, nil
 }

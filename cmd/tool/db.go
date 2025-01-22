@@ -86,7 +86,6 @@ func (p *pClinet) syncContentCards(cs *contentCards) error {
 	}
 
 	ids, err := cs.getNmIDsForDelete()
-
 	if err != nil {
 		slog.Error(fmt.Sprintf("При получении nmID для удаления произошла ошибка %s", err.Error()))
 		return err
@@ -240,14 +239,14 @@ func (p *pClinet) getNmIDsConentCardsTable() ([]uint32, error) {
 		p.ctx, "SELECT nm_id FROM wb_content_cards WHERE trashed is false and deleted is false",
 	)
 	if err != nil {
-		return nil, err
+		return []uint32{}, err
 	}
 
 	defer rows.Close()
 
 	nmIDs, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
 	if err != nil {
-		return nil, err
+		return []uint32{}, err
 	}
 
 	return nmIDs, nil
@@ -294,6 +293,18 @@ func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*cont
 		}
 	}
 
+	skus, err := mps.getSkusForDelete()
+	if err != nil {
+		slog.Error(fmt.Sprintf("При получении списка баркодов для удаления остатков произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	for _, sku := range skus {
+		if err := p.deleteMarketplaceStockBySku(tx, sku); err != nil {
+			return err
+		}
+	}
+
 	if err := tx.Commit(pdb.ctx); err != nil {
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
@@ -327,14 +338,14 @@ func (p *pClinet) getSkusMarketplaceStocksTable() ([]string, error) {
 		p.ctx, "SELECT sku FROM wb_marketplace_stocks",
 	)
 	if err != nil {
-		return nil, err
+		return []string{}, err
 	}
 
 	defer rows.Close()
 
 	skus, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
-		return nil, err
+		return []string{}, err
 	}
 
 	return skus, nil
