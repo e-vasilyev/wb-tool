@@ -19,7 +19,7 @@ var contentRequestCount chan uint8 = make(chan uint8, contentRequestsPerMinute)
 
 // ContentCardCursor описывает блок size в карточке товара
 type ContentCardCursor struct {
-	NmID      uint   `json:"nmID,omitempty"`
+	NmID      uint32 `json:"nmID,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
 	TrashedAt string `json:"trashedAt,omitempty"`
 	Total     uint   `json:"total,omitempty"`
