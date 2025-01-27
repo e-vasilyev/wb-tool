@@ -31,6 +31,7 @@ func (fn optionFunc) apply(c *Client) {
 type ClientBaseURL struct {
 	content     string
 	marketplace string
+	statistics  string
 }
 
 // SetClientBaseURL задает базовые URL
@@ -51,6 +52,7 @@ func SetClientLogger(logger *slog.Logger) ClientOptions {
 var defaultClientBaseURL *ClientBaseURL = &ClientBaseURL{
 	content:     "https://content-api.wildberries.ru",
 	marketplace: "https://marketplace-api.wildberries.ru",
+	statistics:  "https://statistics-api.wildberries.ru",
 }
 
 // NewClient создает клиента подключения
@@ -74,24 +76,24 @@ func NewClientWithOptions(token string, opts ...ClientOptions) *Client {
 	go func() {
 		client.logger.Debug("Запуск функции контроля запросов в минуту")
 		for {
-			select {
-			case <-time.NewTicker(time.Minute).C:
-				c := len(contentRequestCount)
-				client.logger.Debug(fmt.Sprintf("Количество запросов в минуту к контенту: %d", c))
-				for i := 0; i < c; i++ {
-					<-contentRequestCount
-				}
-			case <-time.NewTicker(time.Minute).C:
-				c := len(marketplaceRequestCount)
-				client.logger.Debug(fmt.Sprintf("Количество запросов в минуту к маркетплейсу: %d", c))
-				for i := 0; i < c; i++ {
-					<-marketplaceRequestCount
-				}
-			}
+			<-time.NewTicker(time.Minute).C
+			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к контенту: %d", len(contentRequestCount)))
+			pruneUint8Channel(contentRequestCount)
+			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к маркетплейсу: %d", len(marketplaceRequestCount)))
+			pruneUint8Channel(marketplaceRequestCount)
+			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к статистике: %d", len(statisticsRequestCount)))
+			pruneUint8Channel(statisticsRequestCount)
 		}
 	}()
 
 	return client
+}
+
+// pruneChannel
+func pruneUint8Channel(ch chan uint8) {
+	for i := 0; i < len(ch); i++ {
+		<-ch
+	}
 }
 
 // Ping проверяет доступность API WB
@@ -101,6 +103,10 @@ func (c Client) Ping() error {
 	}
 
 	if err := c.marketplacePing(); err != nil {
+		return err
+	}
+
+	if err := c.statisticsPing(); err != nil {
 		return err
 	}
 
@@ -123,6 +129,15 @@ func (c Client) marketplacePing() error {
 	url := fmt.Sprintf("%s/%s", c.baseURL.marketplace, marketplacePathPing)
 
 	return c.requestPing(url, marketplaceRequestCount)
+}
+
+// statisticsPing проверяет доступность API Statistics
+func (c Client) statisticsPing() error {
+	c.logger.Debug("Проверка достпности API статистики")
+
+	url := fmt.Sprintf("%s/%s", c.baseURL.statistics, statisticsPathPing)
+
+	return c.requestPing(url, statisticsRequestCount)
 }
 
 // requestPing делает запрос ping к указанному ресурсу

@@ -350,3 +350,83 @@ func (p *pClinet) getSkusMarketplaceStocksTable() ([]string, error) {
 
 	return skus, nil
 }
+
+// syncSupplierStocks синхронизирует остатки складов WB полученные с api в БД
+func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []*contentSkusTable) error {
+	tx, err := p.pool.Begin(p.ctx)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	defer tx.Rollback(p.ctx)
+
+	for _, row := range skusRows {
+		if _, ok := supplierStocks.stocks[row.Sku]; ok {
+			if err := pdb.upsertSupplierStocks(tx, row.Sku, row.NmID, supplierStocks.stocks[row.Sku]); err != nil {
+				return err
+			}
+		} else {
+			slog.Debug(fmt.Sprintf("Для баркода %s карточки %d остаток не найден", row.Sku, row.NmID))
+		}
+	}
+
+	skus, err := supplierStocks.getSkusForDelete()
+	if err != nil {
+		slog.Error(fmt.Sprintf("При получении списка баркодов для удаления остатков произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	for _, sku := range skus {
+		if err := p.deleteMarketplaceStockBySku(tx, sku); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(pdb.ctx); err != nil {
+		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
+		return err
+	}
+	slog.Info(fmt.Sprintf("Остатки по складам продавца успешно синхронизировны"))
+
+	return nil
+}
+
+// upsertSupplierStocks обновляет запись остатков по складам WB в БД
+func (p *pClinet) upsertSupplierStocks(tx pgx.Tx, sku string, nmID uint32, stock *supplierStock) error {
+	_, err := tx.Exec(
+		p.ctx,
+		`INSERT INTO wb_stocks (sku, nm_id, quantity, quantity_full, in_way_to_client, in_way_from_client, updated_timestamp)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (sku) DO UPDATE
+				SET quantity = $3, quantity_full=$4, 
+				in_way_to_client=$5, in_way_from_client=$6, updated_timestamp = $7`,
+		sku, nmID, stock.quantity, stock.quantityFull,
+		stock.inWayToClient, stock.inWayFromClient, time.Now().UTC().Format("2006-01-02 03:04:05"),
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При записи остатка карточки %d (баркод %s) в базу данных возникла ошибка %s", nmID, sku, err.Error()))
+		return err
+	}
+
+	return nil
+}
+
+// getSkusSupplierStocksTable получает массив sku из таблицы карточек
+func (p *pClinet) getSkusSupplierStocksTable() ([]string, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT sku FROM wb_stocks",
+	)
+	if err != nil {
+		return []string{}, err
+	}
+
+	defer rows.Close()
+
+	skus, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return []string{}, err
+	}
+
+	return skus, nil
+}

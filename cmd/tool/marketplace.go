@@ -69,14 +69,25 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 		skus = append(skus, row.Sku)
 	}
 
-	stocks, err := newMarketplsceStocks(wbClient, skus)
+	marketplsceStocks, err := newMarketplsceStocks(wbClient, skus)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При получении остатков произошла ошибка %s", err.Error()))
+		slog.Error(fmt.Sprintf("При получении остатков склада продавца произошла ошибка %s", err.Error()))
 		return
 	}
 
-	if err := pdb.syncMarketplaceStocks(stocks, skusRows); err != nil {
+	if err := pdb.syncMarketplaceStocks(marketplsceStocks, skusRows); err != nil {
 		slog.Error(fmt.Sprintf("При синхронизации остатков складов продавца произошла ошибка %s", err.Error()))
+		return
+	}
+
+	supplierStocks, err := newSupplierStocks(wbClient, config.GetString("statistics.date_from"))
+	if err != nil {
+		slog.Error(fmt.Sprintf("При получении остатков складов WB произошла ошибка %s", err.Error()))
+		return
+	}
+
+	if err := pdb.syncSupplierStocks(supplierStocks, skusRows); err != nil {
+		slog.Error(fmt.Sprintf("При синхронизации остатков складов WB произошла ошибка %s", err.Error()))
 		return
 	}
 

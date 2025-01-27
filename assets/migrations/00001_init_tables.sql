@@ -30,4 +30,16 @@ CREATE TABLE IF NOT EXISTS wb_marketplace_stocks (
     PRIMARY KEY (sku),
     FOREIGN KEY (nm_id) REFERENCES wb_content_cards (nm_id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS wb_stocks (
+    sku varchar(16) NOT NULL,
+    nm_id int NOT NULL,
+    quantity int NOT NULL,
+    quantity_full int NOT NULL,
+    in_way_to_client int NOT NULL,
+    in_way_from_client int NOT NULL,
+    updated_timestamp timestamp NOT NULL,
+    PRIMARY KEY (sku),
+    FOREIGN KEY (nm_id) REFERENCES wb_content_cards (nm_id) ON DELETE CASCADE
+);
 -- +goose StatementEnd
