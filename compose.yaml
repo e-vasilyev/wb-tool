@@ -1,0 +1,9 @@
+services:
+  db:
+    image: postgres:16.4-alpine3.20
+    restart: always
+    environment:
+      POSTGRES_DB: wb_tool
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432:5432
