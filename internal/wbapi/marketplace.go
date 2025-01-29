@@ -75,6 +75,11 @@ func (c *Client) GetStocks(warehouse Warehouse, skus []string) (*Stocks, error) 
 
 	var stocks *Stocks = &Stocks{}
 
+	if len(skus) == 0 {
+		c.logger.Warn(fmt.Sprintf("Пустой список баркодов для получения остатков"))
+		return &Stocks{Stocks: []Stock{}}, nil
+	}
+
 	url := fmt.Sprintf("%s/%s/%d", c.baseURL.marketplace, marketplacePathStocks, warehouse.ID)
 
 	countPages := len(skus)/marketplaceSkusLimit + 1
