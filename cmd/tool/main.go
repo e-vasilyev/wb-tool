@@ -68,7 +68,7 @@ func main() {
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
 
-	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stocksSync, wbClient)
+	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).DoWithJobDetails(stocksSync, wbClient)
 	jobStoksSync.Name("Синхронизация остатков")
 	jobStoksSync.SingletonMode()
 
