@@ -160,42 +160,18 @@ func (c Client) requestPing(url string, ch chan uint8) error {
 
 // postRequest делает POST запрос обогащенный заголовками
 // В ответе получаем http.Response без обработки
-func (c Client) postRequest(uri string, data []byte, ch chan uint8) (*http.Response, error) {
-	req, err := http.NewRequest("POST", uri, bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
-
-	return c.httpRequest(req, ch)
-}
-
-// getRequest делает Get запрос обогащенный заголовками
-// В ответе получаем http.Response без обработки
-func (c Client) getRequest(url string, ch chan uint8) (*http.Response, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.httpRequest(req, ch)
-}
-
-// httpRequest делает запрос к API.
-// Тип запроса определяется во входящем параметре.
 // Если запрос возвращает code 429, то запрос повторяется через некоторое время
-func (c Client) httpRequest(req *http.Request, ch chan uint8) (*http.Response, error) {
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", c.token)
-
-	client := &http.Client{}
-
-	c.logger.Debug(fmt.Sprintf("Запрос к %s%s", req.URL.Host, req.URL.Path))
-
+func (c Client) postRequest(uri string, data []byte, ch chan uint8) (*http.Response, error) {
 	var delay time.Duration = 30
 	for {
+		req, err := http.NewRequest("POST", uri, bytes.NewBuffer(data))
+		if err != nil {
+			return nil, err
+		}
+
 		ch <- 1
 
-		res, err := client.Do(req)
+		res, err := c.httpRequest(req)
 		if err != nil {
 			return nil, err
 		}
@@ -208,6 +184,47 @@ func (c Client) httpRequest(req *http.Request, ch chan uint8) (*http.Response, e
 		time.Sleep(delay * time.Second)
 		delay += 30
 	}
+}
+
+// getRequest делает Get запрос обогащенный заголовками
+// В ответе получаем http.Response без обработки
+// Если запрос возвращает code 429, то запрос повторяется через некоторое время
+func (c Client) getRequest(url string, ch chan uint8) (*http.Response, error) {
+	var delay time.Duration = 30
+	for {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		ch <- 1
+
+		res, err := c.httpRequest(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if res.StatusCode != 429 {
+			return res, nil
+		}
+
+		c.logger.Debug(fmt.Sprintf("Получен статус ответа %s. Ожидание %d секунд", res.Status, delay))
+		time.Sleep(delay * time.Second)
+		delay += 30
+	}
+}
+
+// httpRequest делает запрос к API.
+// Тип запроса определяется во входящем параметре.
+func (c Client) httpRequest(req *http.Request) (*http.Response, error) {
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", c.token)
+
+	client := &http.Client{}
+
+	c.logger.Debug(fmt.Sprintf("Запрос к %s%s", req.URL.Host, req.URL.Path))
+
+	return client.Do(req)
 }
 
 // respCodeCheck проверяет HTTP ответ на коды отличные от 200

@@ -76,5 +76,10 @@ func main() {
 		gocron.BeforeJobRuns(func(jobName string) {
 			slog.Info(fmt.Sprintf("Запуск задачи: %s", jobName))
 		}))
+	scheduler.StartAsync()
+
+	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobContentSync.GetName(), jobContentSync.ScheduledTime()))
+	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobStoksSync.GetName(), jobStoksSync.ScheduledTime()))
+
 	scheduler.StartBlocking()
 }
