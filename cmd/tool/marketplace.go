@@ -13,7 +13,7 @@ type marketplaceStock struct {
 	amount uint32
 }
 
-// marketplaceStock описывает остатки по товарам на складах продавца
+// marketplaceStocks описывает остатки по товарам на складах продавца
 type marketplaceStocks struct {
 	stocks map[string]*marketplaceStock
 }
@@ -57,6 +57,8 @@ func newMarketplsceStocks(wbClient *wbapi.Client, skus []string) (*marketplaceSt
 
 // stocksSync синхронизирует остатки по карточкам
 func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
+	defer slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
+
 	skusRows, err := pdb.getContentSkusTable()
 	if err != nil {
 		slog.Error(fmt.Sprintf("При получении списка баркодов из БД произошла ошибка %s", err.Error()))
@@ -74,6 +76,7 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 		slog.Error(fmt.Sprintf("При получении остатков склада продавца произошла ошибка %s", err.Error()))
 		return
 	}
+	slog.Info(fmt.Sprintf("Получено %d баркодов", marketplsceStocks.count()))
 
 	if err := pdb.syncMarketplaceStocks(marketplsceStocks, skusRows); err != nil {
 		slog.Error(fmt.Sprintf("При синхронизации остатков складов продавца произошла ошибка %s", err.Error()))
@@ -90,8 +93,6 @@ func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
 		slog.Error(fmt.Sprintf("При синхронизации остатков складов WB произошла ошибка %s", err.Error()))
 		return
 	}
-
-	slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
 }
 
 // getSkusForDelete получает список skus для удаления

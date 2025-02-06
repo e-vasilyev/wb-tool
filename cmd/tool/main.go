@@ -68,7 +68,7 @@ func main() {
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
 
-	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).StartImmediately().DoWithJobDetails(stocksSync, wbClient)
+	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).DoWithJobDetails(stocksSync, wbClient)
 	jobStoksSync.Name("Синхронизация остатков")
 	jobStoksSync.SingletonMode()
 
@@ -76,5 +76,10 @@ func main() {
 		gocron.BeforeJobRuns(func(jobName string) {
 			slog.Info(fmt.Sprintf("Запуск задачи: %s", jobName))
 		}))
+	scheduler.StartAsync()
+
+	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobContentSync.GetName(), jobContentSync.ScheduledTime()))
+	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobStoksSync.GetName(), jobStoksSync.ScheduledTime()))
+
 	scheduler.StartBlocking()
 }
