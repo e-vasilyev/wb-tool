@@ -69,7 +69,7 @@ func newCards(wbcs *wbapi.ContentCards, trashed bool) *contentCards {
 
 // contentSync синхронизирует карточки с БД
 func contentSync(wbClient *wbapi.Client, job gocron.Job) {
-	defer slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
+	defer slog.Info(fmt.Sprintf("Следующий запуск задачи '%s' в %s", job.GetName(), job.NextRun()))
 
 	// Синнхронизация корзины
 	wbCards, err := wbClient.GetCardsTrash()
@@ -130,4 +130,65 @@ func (cs *contentCards) getNmIDsForDelete() ([]uint32, error) {
 		}
 	}
 	return res, nil
+}
+
+// checkingTimeSpentInTrash проверяет как долго карточки хранятся в коризне.
+// Если карточка хранится слишком долго, то автоматически восстанавливается и обратно помещяется в корзину.
+// При этом проверяется остаток, если остаток не 0 то карточка остается в корзине
+func checkingTimeSpentInTrash(wbClient *wbapi.Client, job gocron.Job) {
+	defer slog.Info(fmt.Sprintf("Следующий запуск задачи '%s' в %s", job.GetName(), job.NextRun()))
+
+	maxDays := config.GetInt("max_days_in_trash")
+	slog.Info(fmt.Sprintf("Запущен поиск карточек в карзине старше %d дней", maxDays))
+
+	nmIDs, err := pdb.getContentCardsForRecoverToExpire(maxDays)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При получении карточек в БД для передобавления в корзниу произошла ошибка %s", err.Error()))
+		return
+	}
+	slog.Debug(fmt.Sprintf("Найдено %d карточек в БД старше %d дней", len(nmIDs), maxDays))
+
+	for _, nmID := range nmIDs {
+		if err := recoverAndMoveToTrash(wbClient, nmID); err == nil {
+			slog.Info(fmt.Sprintf("Карточка %d передобавлена в корзину", nmID))
+		}
+	}
+
+}
+
+// recoverAndMoveToTrash востанавливает указанную карточку из корзины и возвращает обратно
+func recoverAndMoveToTrash(wbClient *wbapi.Client, nmID uint32) error {
+	tx, err := pdb.pool.Begin(pdb.ctx)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	defer tx.Rollback(pdb.ctx)
+
+	if err := pdb.recoverCard(tx, nmID); err != nil {
+		return err
+	}
+
+	nmIDs := []uint32{nmID}
+	if err := wbClient.RecoverCards(nmIDs); err != nil {
+		slog.Error(fmt.Sprintf("При востановлении карточки %d возникла ошибка %s", nmID, err.Error()))
+		return err
+	}
+
+	if err := pdb.moveToTrash(tx, nmID); err != nil {
+		return err
+	}
+
+	if err := wbClient.MoveToTrash(nmIDs); err != nil {
+		slog.Error(fmt.Sprintf("При переносе карточки %d в корзину возникла ошибка %s", nmID, err.Error()))
+		return err
+	}
+
+	if err := tx.Commit(pdb.ctx); err != nil {
+		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
+		return err
+	}
+
+	return nil
 }

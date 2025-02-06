@@ -6,11 +6,13 @@ import (
 )
 
 const (
-	contentPathPing          string = "ping"
-	contentPathCards         string = "content/v2/get/cards/list"
-	contentPathCardsTrash    string = "content/v2/get/cards/trash"
-	contentRequestLimit      uint   = 100
-	contentRequestsPerMinute uint8  = 60 // Количество разрешенных запросов в минуту
+	contentPathPing             string = "ping"
+	contentPathCards            string = "content/v2/get/cards/list"
+	contentPathCardsTrash       string = "content/v2/get/cards/trash"
+	contentPathCardsDeleteTrash string = "content/v2/cards/delete/trash"
+	contentPathCardsRecover     string = "content/v2/cards/recover"
+	contentRequestLimit         uint   = 100
+	contentRequestsPerMinute    uint8  = 60 // Количество разрешенных запросов в минуту
 )
 
 // contentRequestCount канал содержащий количество отправленных запросов
@@ -72,6 +74,14 @@ type contentSettingsRequest struct {
 type contentRequest struct {
 	Settings contentSettingsRequest `json:"settings"`
 }
+
+// contentDeleteTrashRequest описывает запрос для перемещения карточки в корзину
+type contentDeleteTrashRequest struct {
+	NmIDs []uint32 `json:"nmIDs"`
+}
+
+// contentRecover описывает запрос для восстановления карточки из корзины
+type contentRecover contentDeleteTrashRequest
 
 // GetCardsTrash получает все карточки из корзины
 // Так как получить за раз можно не все карточки, выполняются несколько запросов к
@@ -182,4 +192,68 @@ func (c *Client) getCards(url string, jsonBody []byte) (*ContentCards, error) {
 	err = json.NewDecoder(res.Body).Decode(contentCards)
 
 	return contentCards, err
+}
+
+// MoveToTrash переносит карточки в коризину
+// nmIDs ограничен 1000 позициями
+func (c *Client) MoveToTrash(nmIDs []uint32) error {
+	if len(nmIDs) > 1000 {
+		return fmt.Errorf("количество карточек в запросе не должно быть больше 1000. Текущее значение: %d", len(nmIDs))
+	}
+
+	url := fmt.Sprintf("%s/%s", c.baseURL.content, contentPathCardsDeleteTrash)
+
+	body := &contentDeleteTrashRequest{
+		NmIDs: nmIDs,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.postRequest(url, jsonBody, contentRequestCount)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+
+	if err := respCodeCheck(res); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RecoverCards восстанавливает карточки из корзины
+// nmIDs ограничен 1000 позициями
+func (c *Client) RecoverCards(nmIDs []uint32) error {
+	if len(nmIDs) > 1000 {
+		return fmt.Errorf("количество карточек в запросе не должно быть больше 1000. Текущее значение: %d", len(nmIDs))
+	}
+
+	url := fmt.Sprintf("%s/%s", c.baseURL.content, contentPathCardsRecover)
+
+	body := &contentRecover{
+		NmIDs: nmIDs,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.postRequest(url, jsonBody, contentRequestCount)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+
+	if err := respCodeCheck(res); err != nil {
+		return err
+	}
+
+	return nil
 }

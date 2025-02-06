@@ -72,14 +72,19 @@ func main() {
 	jobStoksSync.Name("Синхронизация остатков")
 	jobStoksSync.SingletonMode()
 
+	jobCheckingTimeSpentInTrash, err := scheduler.Cron(config.GetString("cron.checking_time_spent_in_trash")).DoWithJobDetails(checkingTimeSpentInTrash, wbClient)
+	jobCheckingTimeSpentInTrash.Name("Проверка времени нахождения карточек в корзине")
+	jobCheckingTimeSpentInTrash.SingletonMode()
+
 	scheduler.RegisterEventListeners(
 		gocron.BeforeJobRuns(func(jobName string) {
-			slog.Info(fmt.Sprintf("Запуск задачи: %s", jobName))
+			slog.Info(fmt.Sprintf("Запуск задачи '%s'", jobName))
 		}))
 	scheduler.StartAsync()
 
-	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobContentSync.GetName(), jobContentSync.ScheduledTime()))
-	slog.Info(fmt.Sprintf("Запуск задачи %s в %s", jobStoksSync.GetName(), jobStoksSync.ScheduledTime()))
+	for _, job := range scheduler.Jobs() {
+		slog.Info(fmt.Sprintf("Запуск задачи '%s' запланирован в %s", job.GetName(), job.ScheduledTime()))
+	}
 
 	scheduler.StartBlocking()
 }

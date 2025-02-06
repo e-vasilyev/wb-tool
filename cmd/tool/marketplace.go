@@ -57,7 +57,7 @@ func newMarketplsceStocks(wbClient *wbapi.Client, skus []string) (*marketplaceSt
 
 // stocksSync синхронизирует остатки по карточкам
 func stocksSync(wbClient *wbapi.Client, job gocron.Job) {
-	defer slog.Info(fmt.Sprintf("Следующий запуск задачи %s в %s", job.GetName(), job.NextRun()))
+	defer slog.Info(fmt.Sprintf("Следующий запуск задачи '%s' в %s", job.GetName(), job.NextRun()))
 
 	skusRows, err := pdb.getContentSkusTable()
 	if err != nil {
