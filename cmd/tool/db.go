@@ -26,6 +26,21 @@ type contentSkusTable struct {
 	Sku  string `db:"sku"`
 }
 
+// contentCardsTable описывает структуру таблицы wb_content_cards
+type contentCardsTable struct {
+	NmID             uint32 `db:"nm_id"`
+	ImtID            uint32 `db:"imt_id"`
+	VendorCode       string `db:"vendor_code"`
+	SubjectID        int    `db:"subject_id"`
+	SubjectName      string `db:"subject_name"`
+	Brand            string `db:"brand"`
+	Title            string `db:"title"`
+	TrashedAt        string `db:"trashed_at"`
+	Trashed          bool   `db:"trashed"`
+	Deleted          bool   `db:"deleted"`
+	UpdatedTimestamp string `db:"updated_timestamp"`
+}
+
 // connectToDB открывает пул соединений
 func connectToDB(ctx context.Context) (*pgxpool.Pool, error) {
 	var url = config.GetString("database.url")
@@ -429,4 +444,89 @@ func (p *pClinet) getSkusSupplierStocksTable() ([]string, error) {
 	}
 
 	return skus, nil
+}
+
+// getContentCardsTable возвращает содержимое таблицы wb_content_cards из БД исключая удаленные карточки.
+// В качестве параметра указывается возвращать с корзины или нет
+func (p *pClinet) getContentCardsTable(trashed bool) ([]*contentCardsTable, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT * FROM wb_content_cards WHERE deleted is false AND trashed = $1",
+		trashed,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	cards, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[contentCardsTable])
+	if err != nil {
+		return nil, err
+	}
+
+	return cards, nil
+}
+
+// getContentCardsForRecoverToExpire возвращает nm_id карточек из БД для восстановления из корзины у которых заканчивается срок жизни.
+// Параметр days указывает количество дней в корзине больше которых надо показать карточки
+func (p *pClinet) getContentCardsForRecoverToExpire(days int) ([]uint32, error) {
+	rows, err := p.pool.Query(
+		p.ctx, `
+		SELECT cards.nm_id FROM wb_content_cards as cards JOIN 
+			(SELECT nm_id, sum(amount) as amount FROM (
+			(SELECT nm_id, quantity_full as amount FROM wb_stocks) 
+			UNION 
+			(SELECT nm_id, amount FROM wb_marketplace_stocks))
+			GROUP BY nm_id) as stock ON cards.nm_id = stock.nm_id
+		WHERE (
+			deleted = false AND 
+			trashed = true AND
+			amount = 0 AND
+			(current_timestamp - trashed_at) > $1::interval)`,
+		fmt.Sprintf("%d days", days),
+	)
+	if err != nil {
+		return []uint32{}, err
+	}
+
+	defer rows.Close()
+
+	nmIDs, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
+	if err != nil {
+		return []uint32{}, err
+	}
+
+	return nmIDs, nil
+}
+
+// recoverCard восстанавливает карточку из коразины.
+// Важно! Изменения происходят только в БД.
+func (p *pClinet) recoverCard(tx pgx.Tx, nmID uint32) error {
+	_, err := tx.Exec(
+		p.ctx,
+		"UPDATE wb_content_cards SET trashed=false, updated_timestamp=$2 WHERE nm_id=$1",
+		nmID, time.Now().UTC().Format("2006-01-02 03:04:05"),
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При изменении статуса карточки %d в БД возникла ошибка %s", nmID, err.Error()))
+		return err
+	}
+
+	return nil
+}
+
+// moveToTrash переносит карточку в коразину.
+// Важно! Изменения происходят только в БД.
+func (p *pClinet) moveToTrash(tx pgx.Tx, nmID uint32) error {
+	_, err := tx.Exec(
+		p.ctx,
+		"UPDATE wb_content_cards SET trashed=true, updated_timestamp=$2 WHERE nm_id=$1",
+		nmID, time.Now().UTC().Format("2006-01-02 03:04:05"),
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При изменении статуса карточки %d в БД возникла ошибка %s", nmID, err.Error()))
+		return err
+	}
+
+	return nil
 }
