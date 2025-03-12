@@ -195,7 +195,7 @@ func (p *pClinet) deleteSku(tx pgx.Tx, sku string) error {
 	return nil
 }
 
-// deleteSku удаляет записи по остаткам на складах продавца в БД
+// deleteMarketplaceStockBySku удаляет записи по остаткам на складах продавца в БД
 func (p *pClinet) deleteMarketplaceStockBySku(tx pgx.Tx, sku string) error {
 	_, err := tx.Exec(
 		p.ctx,
@@ -393,7 +393,7 @@ func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []
 	}
 
 	for _, sku := range skus {
-		if err := p.deleteMarketplaceStockBySku(tx, sku); err != nil {
+		if err := p.deleteSupplierStockBySku(tx, sku); err != nil {
 			return err
 		}
 	}
@@ -402,7 +402,7 @@ func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
-	slog.Info(fmt.Sprintf("Остатки по складам продавца успешно синхронизировны"))
+	slog.Info(fmt.Sprintf("Остатки по складам WB успешно синхронизировны"))
 
 	return nil
 }
@@ -446,6 +446,21 @@ func (p *pClinet) getSkusSupplierStocksTable() ([]string, error) {
 	return skus, nil
 }
 
+// deleteSupplierStockBySku удаляет записи по остаткам на складах WB в БД
+func (p *pClinet) deleteSupplierStockBySku(tx pgx.Tx, sku string) error {
+	_, err := tx.Exec(
+		p.ctx,
+		`DELETE FROM wb_stocks WHERE sku = $1`,
+		sku,
+	)
+	if err != nil {
+		slog.Error(fmt.Sprintf("При удалении остатка по баркоду %s возникла ошибка %s", sku, err.Error()))
+		return err
+	}
+
+	return nil
+}
+
 // getContentCardsTable возвращает содержимое таблицы wb_content_cards из БД исключая удаленные карточки.
 // В качестве параметра указывается возвращать с корзины или нет
 func (p *pClinet) getContentCardsTable(trashed bool) ([]*contentCardsTable, error) {
@@ -481,7 +496,6 @@ func (p *pClinet) getContentCardsForRecoverToExpire(days int) ([]uint32, error) 
 		WHERE (
 			deleted = false AND 
 			trashed = true AND
-			amount = 0 AND
 			(current_timestamp - trashed_at) > $1::interval)`,
 		fmt.Sprintf("%d days", days),
 	)
