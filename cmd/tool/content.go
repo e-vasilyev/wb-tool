@@ -134,7 +134,6 @@ func (cs *contentCards) getNmIDsForDelete() ([]uint32, error) {
 
 // checkingTimeSpentInTrash проверяет как долго карточки хранятся в коризне.
 // Если карточка хранится слишком долго, то автоматически восстанавливается и обратно помещяется в корзину.
-// При этом проверяется остаток, если остаток не 0 то карточка остается в корзине
 func checkingTimeSpentInTrash(wbClient *wbapi.Client, job gocron.Job) {
 	defer slog.Info(fmt.Sprintf("Следующий запуск задачи '%s' в %s", job.GetName(), job.NextRun()))
 
