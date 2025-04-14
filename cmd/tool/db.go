@@ -484,6 +484,7 @@ func (p *pClinet) getContentCardsTable(trashed bool) ([]*contentCardsTable, erro
 
 // getContentCardsForRecoverToExpire возвращает nm_id карточек из БД для восстановления из корзины у которых заканчивается срок жизни.
 // Параметр days указывает количество дней в корзине больше которых надо показать карточки
+// Карточки не будут восстанавливаться если поле no_recovery имеет значение true
 func (p *pClinet) getContentCardsForRecoverToExpire(days int) ([]uint32, error) {
 	rows, err := p.pool.Query(
 		p.ctx, `
@@ -496,6 +497,7 @@ func (p *pClinet) getContentCardsForRecoverToExpire(days int) ([]uint32, error) 
 		WHERE (
 			deleted = false AND 
 			trashed = true AND
+			no_recovery = false AND
 			(current_timestamp - trashed_at) > $1::interval)`,
 		fmt.Sprintf("%d days", days),
 	)
