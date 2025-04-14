@@ -127,7 +127,7 @@ func (p *pClinet) upsertContentTrashedCard(tx pgx.Tx, card contentCard) error {
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (nm_id) DO UPDATE
 				SET vendor_code = $2, subject_id = $3, subject_name = $4, 
-					trashed_at = $5, trashed = $6, deleted = $8, updated_timestamp = $8`,
+					trashed_at = $5, trashed = $6, deleted = $7, updated_timestamp = $8`,
 		card.nmID, card.vendorCode, card.subjectID,
 		card.subjectName, card.trashedAt, true, false,
 		time.Now().UTC().Format("2006-01-02 03:04:05"),
