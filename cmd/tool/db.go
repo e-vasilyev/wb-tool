@@ -123,13 +123,13 @@ func (p *pClinet) syncContentCards(cs *contentCards) error {
 func (p *pClinet) upsertContentTrashedCard(tx pgx.Tx, card contentCard) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`INSERT INTO wb_content_cards (nm_id, vendor_code, subject_id, subject_name, trashed_at, trashed, updated_timestamp) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO wb_content_cards (nm_id, vendor_code, subject_id, subject_name, trashed_at, trashed, deleted, updated_timestamp) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (nm_id) DO UPDATE
 				SET vendor_code = $2, subject_id = $3, subject_name = $4, 
-					trashed_at = $5, trashed = $6, updated_timestamp = $7`,
+					trashed_at = $5, trashed = $6, deleted = $8, updated_timestamp = $8`,
 		card.nmID, card.vendorCode, card.subjectID,
-		card.subjectName, card.trashedAt, true,
+		card.subjectName, card.trashedAt, true, false,
 		time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
@@ -144,13 +144,13 @@ func (p *pClinet) upsertContentTrashedCard(tx pgx.Tx, card contentCard) error {
 func (p *pClinet) upsertContentCard(tx pgx.Tx, card contentCard) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`INSERT INTO wb_content_cards (nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title, trashed, updated_timestamp)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`INSERT INTO wb_content_cards (nm_id, imt_id, vendor_code, subject_id, subject_name, brand, title, trashed, deleted, updated_timestamp)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (nm_id) DO UPDATE
 				SET imt_id = $2, vendor_code = $3, subject_id = $4, subject_name = $5, 
-					brand = $6, title = $7, trashed = $8, updated_timestamp = $9`,
+					brand = $6, title = $7, trashed = $8, deleted = $9, updated_timestamp = $10`,
 		card.nmID, card.imtID, card.vendorCode, card.subjectID,
-		card.subjectName, card.brand, card.title, false,
+		card.subjectName, card.brand, card.title, false, false,
 		time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
