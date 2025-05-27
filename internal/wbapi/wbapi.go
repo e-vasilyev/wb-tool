@@ -73,28 +73,28 @@ func NewClientWithOptions(token string, opts ...ClientOptions) *Client {
 	}
 
 	// Запуск фоновой функции по понтролю количетсва запросов в минуту
-	go func() {
-		client.logger.Debug("Запуск функции контроля запросов в минуту")
-		for {
-			<-time.NewTicker(time.Minute).C
-			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к контенту: %d", len(contentRequestCount)))
-			pruneUint8Channel(contentRequestCount)
-			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к маркетплейсу: %d", len(marketplaceRequestCount)))
-			pruneUint8Channel(marketplaceRequestCount)
-			client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к статистике: %d", len(statisticsRequestCount)))
-			pruneUint8Channel(statisticsRequestCount)
-		}
-	}()
+	// go func() {
+	// 	client.logger.Debug("Запуск функции контроля запросов в минуту")
+	// 	for {
+	// 		<-time.NewTicker(time.Minute).C
+	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к контенту: %d", len(contentRequestCount)))
+	// 		pruneUint8Channel(contentRequestCount)
+	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к маркетплейсу: %d", len(marketplaceRequestCount)))
+	// 		pruneUint8Channel(marketplaceRequestCount)
+	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к статистике: %d", len(statisticsRequestCount)))
+	// 		pruneUint8Channel(statisticsRequestCount)
+	// 	}
+	// }()
 
 	return client
 }
 
-// pruneChannel
-func pruneUint8Channel(ch chan uint8) {
-	for i := 0; i < len(ch); i++ {
-		<-ch
-	}
-}
+// pruneUint8Channel
+// func pruneUint8Channel(ch chan uint8) {
+// 	for i := 0; i < len(ch); i++ {
+// 		<-ch
+// 	}
+// }
 
 // Ping проверяет доступность API WB
 func (c Client) Ping() error {
@@ -119,7 +119,7 @@ func (c Client) contentPing() error {
 
 	url := fmt.Sprintf("%s/%s", c.baseURL.content, contentPathPing)
 
-	return c.requestPing(url, contentRequestCount)
+	return c.requestPing(url, contentRequestTicker)
 }
 
 // marketplacePing проверяет доступность API Marketplace
@@ -128,7 +128,7 @@ func (c Client) marketplacePing() error {
 
 	url := fmt.Sprintf("%s/%s", c.baseURL.marketplace, marketplacePathPing)
 
-	return c.requestPing(url, marketplaceRequestCount)
+	return c.requestPing(url, marketplaceRequestTicker)
 }
 
 // statisticsPing проверяет доступность API Statistics
@@ -137,11 +137,11 @@ func (c Client) statisticsPing() error {
 
 	url := fmt.Sprintf("%s/%s", c.baseURL.statistics, statisticsPathPing)
 
-	return c.requestPing(url, statisticsRequestCount)
+	return c.requestPing(url, statisticsRequestTicker)
 }
 
 // requestPing делает запрос ping к указанному ресурсу
-func (c Client) requestPing(url string, ch chan uint8) error {
+func (c Client) requestPing(url string, ch <-chan time.Time) error {
 	res, err := c.getRequest(url, ch)
 	if err != nil {
 		return err
@@ -161,7 +161,7 @@ func (c Client) requestPing(url string, ch chan uint8) error {
 // postRequest делает POST запрос обогащенный заголовками
 // В ответе получаем http.Response без обработки
 // Если запрос возвращает code 429, то запрос повторяется через некоторое время
-func (c Client) postRequest(uri string, data []byte, ch chan uint8) (*http.Response, error) {
+func (c Client) postRequest(uri string, data []byte, ch <-chan time.Time) (*http.Response, error) {
 	var delay time.Duration = 30
 	for {
 		req, err := http.NewRequest("POST", uri, bytes.NewBuffer(data))
@@ -169,7 +169,7 @@ func (c Client) postRequest(uri string, data []byte, ch chan uint8) (*http.Respo
 			return nil, err
 		}
 
-		ch <- 1
+		<-ch
 
 		res, err := c.httpRequest(req)
 		if err != nil {
@@ -189,7 +189,7 @@ func (c Client) postRequest(uri string, data []byte, ch chan uint8) (*http.Respo
 // getRequest делает Get запрос обогащенный заголовками
 // В ответе получаем http.Response без обработки
 // Если запрос возвращает code 429, то запрос повторяется через некоторое время
-func (c Client) getRequest(url string, ch chan uint8) (*http.Response, error) {
+func (c Client) getRequest(url string, ch <-chan time.Time) (*http.Response, error) {
 	var delay time.Duration = 30
 	for {
 		req, err := http.NewRequest("GET", url, nil)
@@ -197,7 +197,7 @@ func (c Client) getRequest(url string, ch chan uint8) (*http.Response, error) {
 			return nil, err
 		}
 
-		ch <- 1
+		<-ch
 
 		res, err := c.httpRequest(req)
 		if err != nil {

@@ -3,6 +3,7 @@ package wbapi
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 const (
@@ -12,12 +13,11 @@ const (
 	contentPathCardsDeleteTrash string = "content/v2/cards/delete/trash"
 	contentPathCardsRecover     string = "content/v2/cards/recover"
 	contentRequestLimit         uint   = 100
-	contentRequestsPerMinute    uint8  = 60 // Количество разрешенных запросов в минуту
 )
 
-// contentRequestCount канал содержащий количество отправленных запросов
-// в разделе контента.
-var contentRequestCount chan uint8 = make(chan uint8, contentRequestsPerMinute)
+// contentRequestTicker канал контролирующй количество отправленных запросов в минуту.
+// 60 запросов в минуту в разделе контента (раз в секунду)
+var contentRequestTicker <-chan time.Time = time.NewTicker(time.Second).C
 
 // ContentCardCursor описывает блок size в карточке товара
 type ContentCardCursor struct {
@@ -178,7 +178,7 @@ func (c *Client) GetCards() (*ContentCards, error) {
 func (c *Client) getCards(url string, jsonBody []byte) (*ContentCards, error) {
 	contentCards := &ContentCards{}
 
-	res, err := c.postRequest(url, jsonBody, contentRequestCount)
+	res, err := c.postRequest(url, jsonBody, contentRequestTicker)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (c *Client) MoveToTrash(nmIDs []uint32) error {
 		return err
 	}
 
-	res, err := c.postRequest(url, jsonBody, contentRequestCount)
+	res, err := c.postRequest(url, jsonBody, contentRequestTicker)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (c *Client) RecoverCards(nmIDs []uint32) error {
 		return err
 	}
 
-	res, err := c.postRequest(url, jsonBody, contentRequestCount)
+	res, err := c.postRequest(url, jsonBody, contentRequestTicker)
 	if err != nil {
 		return err
 	}
