@@ -3,17 +3,17 @@ package wbapi
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 const (
 	statisticsPathPing           string = "ping"
 	statisticsPathSupplierStocks string = "api/v1/supplier/stocks"
-	statisticsRequestsPerMinute  uint8  = 1 // Количество разрешенных запросов в минуту
 )
 
-// statisticsRequestCount канал содержащий количество отправленных запросов
-// в разделе статистика.
-var statisticsRequestCount chan uint8 = make(chan uint8, statisticsRequestsPerMinute)
+// statisticsRequestTicker канал содержащий количество отправленных запросов
+// 1 запрос в минуту в разделе статистика.
+var statisticsRequestTicker <-chan time.Time = time.NewTicker(time.Millisecond * 500).C
 
 // StatisticsSupplierStock описывает остатки на складе
 type StatisticsSupplierStock struct {
@@ -45,7 +45,7 @@ func (c *Client) GetStatisticsSupplierStock(dateFrom string) ([]*StatisticsSuppl
 
 	url := fmt.Sprintf("%s/%s?dateFrom=%s", c.baseURL.statistics, statisticsPathSupplierStocks, dateFrom)
 
-	res, err := c.getRequest(url, statisticsRequestCount)
+	res, err := c.getRequest(url, statisticsRequestTicker)
 	if err != nil {
 		return nil, err
 	}

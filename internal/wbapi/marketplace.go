@@ -3,19 +3,19 @@ package wbapi
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 const (
-	marketplacePathPing          string = "ping"
-	marketplacePathWarehouses    string = "api/v3/warehouses"
-	marketplacePathStocks        string = "api/v3/stocks"
-	marketplaceSkusLimit         int    = 1000
-	marketplaceRequestsPerMinute uint8  = 200 // Количество разрешенных запросов в минуту
+	marketplacePathPing       string = "ping"
+	marketplacePathWarehouses string = "api/v3/warehouses"
+	marketplacePathStocks     string = "api/v3/stocks"
+	marketplaceSkusLimit      int    = 1000
 )
 
-// marketplaceRequestCount канал содержащий количество отправленных запросов
-// в разделе маркетплейса.
-var marketplaceRequestCount chan uint8 = make(chan uint8, marketplaceRequestsPerMinute)
+// marketplaceRequestTicker канал контролирующй количество отправленных запросов в минуту.
+// 120 запросов в минуту в разделе маркетплейса (2 раза в секунду).
+var marketplaceRequestTicker <-chan time.Time = time.NewTicker(time.Millisecond * 500).C
 
 // Warehouse описывает склад продавца
 type Warehouse struct {
@@ -50,7 +50,7 @@ func (c *Client) GetWarehouses() ([]*Warehouse, error) {
 
 	url := fmt.Sprintf("%s/%s", c.baseURL.marketplace, marketplacePathWarehouses)
 
-	res, err := c.getRequest(url, marketplaceRequestCount)
+	res, err := c.getRequest(url, marketplaceRequestTicker)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (c *Client) GetStocks(warehouse Warehouse, skus []string) (*Stocks, error) 
 func (c *Client) getStocks(url string, jsonBody []byte) (*Stocks, error) {
 	var stocks *Stocks
 
-	res, err := c.postRequest(url, jsonBody, marketplaceRequestCount)
+	res, err := c.postRequest(url, jsonBody, marketplaceRequestTicker)
 	if err != nil {
 		return nil, err
 	}
