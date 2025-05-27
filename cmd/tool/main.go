@@ -64,14 +64,26 @@ func main() {
 	// Запуск задач
 	scheduler := gocron.NewScheduler(time.Local)
 
-	jobContentSync, err := scheduler.Cron(config.GetString("cron.content_cards_sync")).DoWithJobDetails(contentSync, wbClient)
+	jobContentSyncCron := scheduler.Cron(config.GetString("cron.content_cards_sync"))
+	if config.GetBool("cron.content_cards_sync_start_immediately") {
+		jobContentSyncCron.StartImmediately()
+	}
+	jobContentSync, err := jobContentSyncCron.DoWithJobDetails(contentSync, wbClient)
 	jobContentSync.Name("Синхронизация карточек")
 	jobContentSync.SingletonMode()
 
-	jobStoksSync, err := scheduler.Cron(config.GetString("cron.stoks_sync")).DoWithJobDetails(stocksSync, wbClient)
+	jobStoksSyncCron := scheduler.Cron(config.GetString("cron.stoks_sync"))
+	if config.GetBool("cron.stoks_sync_start_immediately") {
+		jobStoksSyncCron.StartImmediately()
+	}
+	jobStoksSync, err := jobStoksSyncCron.DoWithJobDetails(stocksSync, wbClient)
 	jobStoksSync.Name("Синхронизация остатков")
 	jobStoksSync.SingletonMode()
 
+	jobCheckingTimeSpentInTrashCron := scheduler.Cron(config.GetString("cron.checking_time_spent_in_trash"))
+	if config.GetBool("cron.checking_time_spent_in_trash_start_immediately") {
+		jobCheckingTimeSpentInTrashCron.StartImmediately()
+	}
 	jobCheckingTimeSpentInTrash, err := scheduler.Cron(config.GetString("cron.checking_time_spent_in_trash")).DoWithJobDetails(checkingTimeSpentInTrash, wbClient)
 	jobCheckingTimeSpentInTrash.Name("Проверка времени нахождения карточек в корзине")
 	jobCheckingTimeSpentInTrash.SingletonMode()

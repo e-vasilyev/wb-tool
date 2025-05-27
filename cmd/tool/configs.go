@@ -31,8 +31,11 @@ func setConfig() {
 
 	// Настройки задач
 	config.SetDefault("cron.content_cards_sync", "0 */4 * * *")
+	config.SetDefault("cron.content_cards_sync_start_immediately", "false")
 	config.SetDefault("cron.stoks_sync", "10 */2 * * *")
+	config.SetDefault("cron.stoks_sync_start_immediately", "false")
 	config.SetDefault("cron.checking_time_spent_in_trash", "20 2 * * *")
+	config.SetDefault("cron.checking_time_spent_in_trash_start_immediately", "false")
 
 	// Общие настройки
 	config.SetDefault("max_days_in_trash", 25)
