@@ -114,7 +114,7 @@ func (p *pClinet) syncContentCards(cs *contentCards) error {
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
-	slog.Info(fmt.Sprintf("Карточки успешно синхронизировны"))
+	slog.Info("Карточки успешно синхронизировны")
 
 	return nil
 }
@@ -324,7 +324,7 @@ func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*cont
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
-	slog.Info(fmt.Sprintf("Остатки по складам продавца успешно синхронизировны"))
+	slog.Info("Остатки по складам продавца успешно синхронизировны")
 
 	return nil
 }
@@ -402,7 +402,7 @@ func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []
 		slog.Error(fmt.Sprintf("При коммите изменений в БД произошла ошибка %s", err.Error()))
 		return err
 	}
-	slog.Info(fmt.Sprintf("Остатки по складам WB успешно синхронизировны"))
+	slog.Info("Остатки по складам WB успешно синхронизировны")
 
 	return nil
 }

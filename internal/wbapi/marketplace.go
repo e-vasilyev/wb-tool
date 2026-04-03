@@ -76,7 +76,7 @@ func (c *Client) GetStocks(warehouse Warehouse, skus []string) (*Stocks, error) 
 	var stocks *Stocks = &Stocks{}
 
 	if len(skus) == 0 {
-		c.logger.Warn(fmt.Sprintf("Пустой список баркодов для получения остатков"))
+		c.logger.Warn("Пустой список баркодов для получения остатков")
 		return &Stocks{Stocks: []Stock{}}, nil
 	}
 
