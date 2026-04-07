@@ -10,7 +10,7 @@ const (
 	marketplacePathPing       string = "ping"
 	marketplacePathWarehouses string = "api/v3/warehouses"
 	marketplacePathStocks     string = "api/v3/stocks"
-	marketplaceSkusLimit      int    = 1000
+	marketplaceChrtIDsLimit   int    = 1000
 )
 
 // marketplaceRequestTicker канал контролирующй количество отправленных запросов в минуту.
@@ -28,7 +28,7 @@ type Warehouse struct {
 
 // Stock описывает остаток на складе продавца
 type Stock struct {
-	Sku    string `json:"sku"`
+	ChrtID uint32 `json:"chrtId"`
 	Amount uint32 `json:"amount"`
 }
 
@@ -39,7 +39,7 @@ type Stocks struct {
 
 // stockRequest описывает тело запроса для получению остатков
 type stockRequest struct {
-	Skus []string `json:"skus"`
+	ChrtID []uint32 `json:"chrtIds"`
 }
 
 // GetWarehouses получает список складов продавца
@@ -56,7 +56,7 @@ func (c *Client) GetWarehouses() ([]*Warehouse, error) {
 	}
 	defer res.Body.Close()
 
-	if err := respCodeCheck(res); err != nil {
+	if _, err := respCodeCheck(res); err != nil {
 		return nil, err
 	}
 
@@ -69,33 +69,33 @@ func (c *Client) GetWarehouses() ([]*Warehouse, error) {
 }
 
 // GetStocks получает остатки по слкаду продавца,
-// можно передать массив больше 1000, в этом случае запросы разделятся на части
-func (c *Client) GetStocks(warehouse Warehouse, skus []string) (*Stocks, error) {
+// можно передать массив больше marketplaceChrtIDsLimit, в этом случае запросы разделятся на части
+func (c *Client) GetStocks(warehouse Warehouse, chrtIDs []uint32) (*Stocks, error) {
 	c.logger.Debug(fmt.Sprintf("Получение остатка на складе продавца: %s ", warehouse.Name))
 
 	var stocks *Stocks = &Stocks{}
 
-	if len(skus) == 0 {
-		c.logger.Warn(fmt.Sprintf("Пустой список баркодов для получения остатков"))
+	if len(chrtIDs) == 0 {
+		c.logger.Warn("Пустой список id размеров для получения остатков")
 		return &Stocks{Stocks: []Stock{}}, nil
 	}
 
 	url := fmt.Sprintf("%s/%s/%d", c.baseURL.marketplace, marketplacePathStocks, warehouse.ID)
 
-	countPages := len(skus)/marketplaceSkusLimit + 1
-	var pSkus [][]string = make([][]string, countPages)
+	countPages := len(chrtIDs)/marketplaceChrtIDsLimit + 1
+	var page [][]uint32 = make([][]uint32, countPages)
 
 	for i := 0; i < countPages; i++ {
-		start := i * marketplaceSkusLimit
-		stop := (i + 1) * marketplaceSkusLimit
-		if stop > len(skus) {
-			stop = len(skus)
+		start := i * marketplaceChrtIDsLimit
+		stop := (i + 1) * marketplaceChrtIDsLimit
+		if stop > len(chrtIDs) {
+			stop = len(chrtIDs)
 		}
 
-		pSkus[i] = skus[start:stop]
+		page[i] = chrtIDs[start:stop]
 
 		body := &stockRequest{
-			Skus: pSkus[i],
+			ChrtID: page[i],
 		}
 
 		jsonBody, err := json.Marshal(body)
@@ -125,7 +125,7 @@ func (c *Client) getStocks(url string, jsonBody []byte) (*Stocks, error) {
 
 	defer res.Body.Close()
 
-	if err := respCodeCheck(res); err != nil {
+	if _, err := respCodeCheck(res); err != nil {
 		return nil, err
 	}
 

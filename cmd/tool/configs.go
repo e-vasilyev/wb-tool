@@ -39,5 +39,4 @@ func setConfig() {
 
 	// Общие настройки
 	config.SetDefault("max_days_in_trash", 25)
-	config.SetDefault("statistics.date_from", "2023-11-01")
 }
