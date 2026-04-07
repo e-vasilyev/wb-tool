@@ -8,6 +8,12 @@ import (
 	"github.com/go-co-op/gocron"
 )
 
+// contentCardSize описывает блок size в карточке товара
+type contentCardSize struct {
+	chrtID uint32
+	skus   []string
+}
+
 // contentCard описывает карточку товара
 type contentCard struct {
 	nmID        uint32
@@ -17,7 +23,7 @@ type contentCard struct {
 	subjectName string
 	brand       string
 	title       string
-	skus        []string
+	sizes       []contentCardSize
 	createdAt   string
 	updatedAt   string
 	trashedAt   string
@@ -39,10 +45,14 @@ func newCards(wbcs *wbapi.ContentCards, trashed bool) *contentCards {
 	var cards []*contentCard
 
 	for _, c := range wbcs.Cards {
-		var skus []string
+		var sizes []contentCardSize
 
 		for _, s := range c.Sizes {
-			skus = append(skus, s.Skus...)
+			size := &contentCardSize{
+				chrtID: s.ChrtID,
+				skus:   s.Skus,
+			}
+			sizes = append(sizes, *size)
 		}
 
 		card := &contentCard{
@@ -53,7 +63,7 @@ func newCards(wbcs *wbapi.ContentCards, trashed bool) *contentCards {
 			subjectName: c.SubjectName,
 			brand:       c.Brand,
 			title:       c.Title,
-			skus:        skus,
+			sizes:       sizes,
 			createdAt:   c.CreatedAt,
 			updatedAt:   c.UpdatedAt,
 			trashedAt:   c.TrashedAt,

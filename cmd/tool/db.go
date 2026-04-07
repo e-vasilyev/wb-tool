@@ -26,6 +26,12 @@ type contentSkusTable struct {
 	Sku  string `db:"sku"`
 }
 
+// contentSizesTable описывает структуру таблицы wb_content_sizes
+type contentSizesTable struct {
+	ChrtID uint32 `db:"chrt_id"`
+	NmID   uint32 `db:"nm_id"`
+}
+
 // contentCardsTable описывает структуру таблицы wb_content_cards
 type contentCardsTable struct {
 	NmID             uint32 `db:"nm_id"`
@@ -95,7 +101,7 @@ func (p *pClinet) syncContentCards(cs *contentCards) error {
 			return err
 		}
 
-		if err := p.upsetSkus(tx, *card); err != nil {
+		if err := p.upsetSizes(tx, *card); err != nil {
 			return err
 		}
 	}
@@ -161,15 +167,39 @@ func (p *pClinet) upsertContentCard(tx pgx.Tx, card contentCard) error {
 	return nil
 }
 
-// upsetSkus обновляет записи по бракодам в БД
-func (p *pClinet) upsetSkus(tx pgx.Tx, card contentCard) error {
-	for _, sku := range card.skus {
+// upsetSizes обновляет записи по размерам в БД
+func (p *pClinet) upsetSizes(tx pgx.Tx, card contentCard) error {
+	for _, size := range card.sizes {
 		_, err := tx.Exec(
 			p.ctx,
-			`INSERT INTO wb_content_skus (sku, nm_id)
+			`INSERT INTO wb_content_sizes (chrt_id, nm_id)
+				VALUES ($1, $2)
+				ON CONFLICT (chrt_id) DO NOTHING`,
+			size.chrtID, card.nmID,
+		)
+		if err != nil {
+			slog.Error(fmt.Sprintf("При записи размера %d в базу дунных возникла ошибка %s", size.chrtID, err.Error()))
+			return err
+		}
+
+		if err := p.upsetSkus(tx, size); err != nil {
+			return err
+		}
+
+	}
+
+	return nil
+}
+
+// upsetSkus обновляет записи по бракодам в БД
+func (p *pClinet) upsetSkus(tx pgx.Tx, size contentCardSize) error {
+	for _, sku := range size.skus {
+		_, err := tx.Exec(
+			p.ctx,
+			`INSERT INTO wb_content_skus (sku, chrt_id)
 				VALUES ($1, $2)
 				ON CONFLICT (sku) DO NOTHING`,
-			sku, card.nmID,
+			sku, size.chrtID,
 		)
 		if err != nil {
 			slog.Error(fmt.Sprintf("При записи баркода %s в базу дунных возникла ошибка %s", sku, err.Error()))
@@ -195,15 +225,15 @@ func (p *pClinet) deleteSku(tx pgx.Tx, sku string) error {
 	return nil
 }
 
-// deleteMarketplaceStockBySku удаляет записи по остаткам на складах продавца в БД
-func (p *pClinet) deleteMarketplaceStockBySku(tx pgx.Tx, sku string) error {
+// deleteMarketplaceStockByChrtID удаляет записи по остаткам на складах продавца в БД
+func (p *pClinet) deleteMarketplaceStockByChrtID(tx pgx.Tx, chrtID uint32) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`DELETE FROM wb_marketplace_stocks WHERE sku = $1`,
-		sku,
+		`DELETE FROM wb_marketplace_stocks WHERE chrt_id = $1`,
+		chrtID,
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При удалении остатка по баркоду %s возникла ошибка %s", sku, err.Error()))
+		slog.Error(fmt.Sprintf("При удалении остатка по id размера %d возникла ошибка %s", chrtID, err.Error()))
 		return err
 	}
 
@@ -213,7 +243,7 @@ func (p *pClinet) deleteMarketplaceStockBySku(tx pgx.Tx, sku string) error {
 // getContentSkusTable возвращает содержимое таблицы wb_content_skus из БД
 func (p *pClinet) getContentSkusTable() ([]*contentSkusTable, error) {
 	rows, err := p.pool.Query(
-		p.ctx, "SELECT sku, nm_id FROM wb_content_skus NATURAL JOIN wb_content_cards WHERE deleted is false",
+		p.ctx, "SELECT sku, chrt_id FROM wb_content_skus NATURAL JOIN wb_content_cards WHERE deleted is false",
 	)
 	if err != nil {
 		return nil, err
@@ -227,6 +257,25 @@ func (p *pClinet) getContentSkusTable() ([]*contentSkusTable, error) {
 	}
 
 	return skus, nil
+}
+
+// getContentSizesTable возвращает содержимое таблицы wb_content_sizes из БД
+func (p *pClinet) getContentSizesTable() ([]*contentSizesTable, error) {
+	rows, err := p.pool.Query(
+		p.ctx, "SELECT chrt_id, nm_id FROM wb_content_sizes NATURAL JOIN wb_content_cards WHERE deleted is false",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	sizes, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[contentSizesTable])
+	if err != nil {
+		return nil, err
+	}
+
+	return sizes, nil
 }
 
 // getTrashedNmIDsConentCardsTable получает массив nmID из таблицы карточек в корзине
@@ -289,7 +338,7 @@ func (p *pClinet) markAsDeleted(tx pgx.Tx, ids []uint32) error {
 }
 
 // syncMarketplaceStocks синхронизирует остатки полученные с api в БД
-func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*contentSkusTable) error {
+func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, sizesRows []*contentSizesTable) error {
 	tx, err := p.pool.Begin(p.ctx)
 	if err != nil {
 		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
@@ -298,24 +347,24 @@ func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*cont
 
 	defer tx.Rollback(p.ctx)
 
-	for _, row := range skusRows {
-		if _, ok := mps.stocks[row.Sku]; ok {
-			if err := pdb.upsertMarketplaceStocks(tx, row.Sku, row.NmID, mps.getStock(row.Sku)); err != nil {
+	for _, row := range sizesRows {
+		if _, ok := mps.stocks[row.ChrtID]; ok {
+			if err := pdb.upsertMarketplaceStocks(tx, row.ChrtID, row.NmID, mps.getStock(row.ChrtID)); err != nil {
 				return err
 			}
 		} else {
-			slog.Debug(fmt.Sprintf("Для баркода %s карточки %d остаток не найден", row.Sku, row.NmID))
+			slog.Debug(fmt.Sprintf("Для id размера %d карточки %d остаток не найден", row.ChrtID, row.NmID))
 		}
 	}
 
-	skus, err := mps.getSkusForDelete()
+	chrtIDs, err := mps.getChrtIDsForDelete()
 	if err != nil {
 		slog.Error(fmt.Sprintf("При получении списка баркодов для удаления остатков произошла ошибка %s", err.Error()))
 		return err
 	}
 
-	for _, sku := range skus {
-		if err := p.deleteMarketplaceStockBySku(tx, sku); err != nil {
+	for _, chrtID := range chrtIDs {
+		if err := p.deleteMarketplaceStockByChrtID(tx, chrtID); err != nil {
 			return err
 		}
 	}
@@ -330,44 +379,44 @@ func (p *pClinet) syncMarketplaceStocks(mps *marketplaceStocks, skusRows []*cont
 }
 
 // upsertMarketplaceStocks обновляет запись остатков по маркетплейсу в БД
-func (p *pClinet) upsertMarketplaceStocks(tx pgx.Tx, sku string, nmID uint32, ammount uint32) error {
+func (p *pClinet) upsertMarketplaceStocks(tx pgx.Tx, chrtID uint32, nmID uint32, ammount uint32) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`INSERT INTO wb_marketplace_stocks (sku, nm_id, amount, updated_timestamp)
+		`INSERT INTO wb_marketplace_stocks (chrt_id, nm_id, amount, updated_timestamp)
 			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (sku) DO UPDATE
+			ON CONFLICT (chrt_id) DO UPDATE
 				SET amount = $3, updated_timestamp = $4`,
-		sku, nmID, ammount, time.Now().UTC().Format("2006-01-02 03:04:05"),
+		chrtID, nmID, ammount, time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При записи остатка карточки %d (баркод %s) в базу данных возникла ошибка %s", nmID, sku, err.Error()))
+		slog.Error(fmt.Sprintf("При записи остатка карточки %d (id размера %d) в базу данных возникла ошибка %s", nmID, chrtID, err.Error()))
 		return err
 	}
 
 	return nil
 }
 
-// getSkusMarketplaceStocksTable получает массив sku из таблицы карточек
-func (p *pClinet) getSkusMarketplaceStocksTable() ([]string, error) {
+// getChrtIDsMarketplaceStocksTable получает массив chrt_id из таблицы остатков
+func (p *pClinet) getChrtIDsMarketplaceStocksTable() ([]uint32, error) {
 	rows, err := p.pool.Query(
-		p.ctx, "SELECT sku FROM wb_marketplace_stocks",
+		p.ctx, "SELECT chrt_id FROM wb_marketplace_stocks",
 	)
 	if err != nil {
-		return []string{}, err
+		return []uint32{}, err
 	}
 
 	defer rows.Close()
 
-	skus, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	chrtID, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
 	if err != nil {
-		return []string{}, err
+		return []uint32{}, err
 	}
 
-	return skus, nil
+	return chrtID, nil
 }
 
-// syncSupplierStocks синхронизирует остатки складов WB полученные с api в БД
-func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []*contentSkusTable) error {
+// syncWbStocks синхронизирует остатки складов WB полученные с api в БД
+func (p *pClinet) syncWbStocks(wbStocks *wbStocks, sizesRows []*contentSizesTable) error {
 	tx, err := p.pool.Begin(p.ctx)
 	if err != nil {
 		slog.Error(fmt.Sprintf("При создании транзакции произошла ошибка %s", err.Error()))
@@ -376,24 +425,24 @@ func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []
 
 	defer tx.Rollback(p.ctx)
 
-	for _, row := range skusRows {
-		if _, ok := supplierStocks.stocks[row.Sku]; ok {
-			if err := pdb.upsertSupplierStocks(tx, row.Sku, row.NmID, supplierStocks.stocks[row.Sku]); err != nil {
+	for _, row := range sizesRows {
+		if _, ok := wbStocks.stocks[row.ChrtID]; ok {
+			if err := pdb.upsertWbStocks(tx, row.ChrtID, row.NmID, wbStocks.stocks[row.ChrtID]); err != nil {
 				return err
 			}
 		} else {
-			slog.Debug(fmt.Sprintf("Для баркода %s карточки %d остаток не найден", row.Sku, row.NmID))
+			slog.Debug(fmt.Sprintf("Для id размера %d карточки %d остаток не найден", row.ChrtID, row.NmID))
 		}
 	}
 
-	skus, err := supplierStocks.getSkusForDelete()
+	chrtIDs, err := wbStocks.getChrtIDsForDelete()
 	if err != nil {
-		slog.Error(fmt.Sprintf("При получении списка баркодов для удаления остатков произошла ошибка %s", err.Error()))
+		slog.Error(fmt.Sprintf("При получении списка id размеров для удаления остатков произошла ошибка %s", err.Error()))
 		return err
 	}
 
-	for _, sku := range skus {
-		if err := p.deleteSupplierStockBySku(tx, sku); err != nil {
+	for _, chrtID := range chrtIDs {
+		if err := p.deleteWbStockByChrtID(tx, chrtID); err != nil {
 			return err
 		}
 	}
@@ -407,54 +456,54 @@ func (p *pClinet) syncSupplierStocks(supplierStocks *supplierStocks, skusRows []
 	return nil
 }
 
-// upsertSupplierStocks обновляет запись остатков по складам WB в БД
-func (p *pClinet) upsertSupplierStocks(tx pgx.Tx, sku string, nmID uint32, stock *supplierStock) error {
+// upsertWbStocks обновляет запись остатков по складам WB в БД
+func (p *pClinet) upsertWbStocks(tx pgx.Tx, chrtID uint32, nmID uint32, stock *wbStock) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`INSERT INTO wb_stocks (sku, nm_id, quantity, quantity_full, in_way_to_client, in_way_from_client, updated_timestamp)
+		`INSERT INTO wb_stocks (chrt_id, nm_id, quantity, quantity_full, in_way_to_client, in_way_from_client, updated_timestamp)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			ON CONFLICT (sku) DO UPDATE
+			ON CONFLICT (chrt_id) DO UPDATE
 				SET quantity = $3, quantity_full=$4, 
 				in_way_to_client=$5, in_way_from_client=$6, updated_timestamp = $7`,
-		sku, nmID, stock.quantity, stock.quantityFull,
+		chrtID, nmID, stock.quantity, stock.quantityFull,
 		stock.inWayToClient, stock.inWayFromClient, time.Now().UTC().Format("2006-01-02 03:04:05"),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При записи остатка карточки %d (баркод %s) в базу данных возникла ошибка %s", nmID, sku, err.Error()))
+		slog.Error(fmt.Sprintf("При записи остатка карточки %d (id размера %d) в базу данных возникла ошибка %s", nmID, chrtID, err.Error()))
 		return err
 	}
 
 	return nil
 }
 
-// getSkusSupplierStocksTable получает массив sku из таблицы карточек
-func (p *pClinet) getSkusSupplierStocksTable() ([]string, error) {
+// getChrtIDsWbStocksTable получает массив chrtID из таблицы остатков
+func (p *pClinet) getChrtIDsWbStocksTable() ([]uint32, error) {
 	rows, err := p.pool.Query(
-		p.ctx, "SELECT sku FROM wb_stocks",
+		p.ctx, "SELECT chrt_id FROM wb_stocks",
 	)
 	if err != nil {
-		return []string{}, err
+		return []uint32{}, err
 	}
 
 	defer rows.Close()
 
-	skus, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	chrtIDs, err := pgx.CollectRows(rows, pgx.RowTo[uint32])
 	if err != nil {
-		return []string{}, err
+		return []uint32{}, err
 	}
 
-	return skus, nil
+	return chrtIDs, nil
 }
 
-// deleteSupplierStockBySku удаляет записи по остаткам на складах WB в БД
-func (p *pClinet) deleteSupplierStockBySku(tx pgx.Tx, sku string) error {
+// deleteWbStockByChrtID удаляет записи по остаткам на складах WB в БД
+func (p *pClinet) deleteWbStockByChrtID(tx pgx.Tx, chrtID uint32) error {
 	_, err := tx.Exec(
 		p.ctx,
-		`DELETE FROM wb_stocks WHERE sku = $1`,
-		sku,
+		`DELETE FROM wb_stocks WHERE chrt_id = $1`,
+		chrtID,
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("При удалении остатка по баркоду %s возникла ошибка %s", sku, err.Error()))
+		slog.Error(fmt.Sprintf("При удалении остатка по id размера %d возникла ошибка %s", chrtID, err.Error()))
 		return err
 	}
 

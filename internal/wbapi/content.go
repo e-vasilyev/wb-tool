@@ -29,7 +29,8 @@ type ContentCardCursor struct {
 
 // ContentCardSize описывает блок size в карточке товара
 type ContentCardSize struct {
-	Skus []string `json:"skus"`
+	ChrtID uint32   `json:"chrtID"`
+	Skus   []string `json:"skus"`
 }
 
 // ContentCard описывает карточку в разделе content
@@ -185,7 +186,7 @@ func (c *Client) getCards(url string, jsonBody []byte) (*ContentCards, error) {
 
 	defer res.Body.Close()
 
-	if err := respCodeCheck(res); err != nil {
+	if _, err := respCodeCheck(res); err != nil {
 		return nil, err
 	}
 
@@ -219,7 +220,7 @@ func (c *Client) MoveToTrash(nmIDs []uint32) error {
 
 	defer res.Body.Close()
 
-	if err := respCodeCheck(res); err != nil {
+	if _, err := respCodeCheck(res); err != nil {
 		return err
 	}
 
@@ -251,7 +252,7 @@ func (c *Client) RecoverCards(nmIDs []uint32) error {
 
 	defer res.Body.Close()
 
-	if err := respCodeCheck(res); err != nil {
+	if _, err := respCodeCheck(res); err != nil {
 		return err
 	}
 

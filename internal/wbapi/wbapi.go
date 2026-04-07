@@ -29,6 +29,7 @@ func (fn optionFunc) apply(c *Client) {
 
 // ClientBaseURL список базовых URL до различных API
 type ClientBaseURL struct {
+	analytics   string
 	content     string
 	marketplace string
 	statistics  string
@@ -50,6 +51,7 @@ func SetClientLogger(logger *slog.Logger) ClientOptions {
 
 // defaultClientBaseURL значение по умолчанию базовых URL
 var defaultClientBaseURL *ClientBaseURL = &ClientBaseURL{
+	analytics:   "https://seller-analytics-api.wildberries.ru",
 	content:     "https://content-api.wildberries.ru",
 	marketplace: "https://marketplace-api.wildberries.ru",
 	statistics:  "https://statistics-api.wildberries.ru",
@@ -72,32 +74,15 @@ func NewClientWithOptions(token string, opts ...ClientOptions) *Client {
 		opt.apply(client)
 	}
 
-	// Запуск фоновой функции по понтролю количетсва запросов в минуту
-	// go func() {
-	// 	client.logger.Debug("Запуск функции контроля запросов в минуту")
-	// 	for {
-	// 		<-time.NewTicker(time.Minute).C
-	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к контенту: %d", len(contentRequestCount)))
-	// 		pruneUint8Channel(contentRequestCount)
-	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к маркетплейсу: %d", len(marketplaceRequestCount)))
-	// 		pruneUint8Channel(marketplaceRequestCount)
-	// 		client.logger.Debug(fmt.Sprintf("Количество запросов за последнюю минуту к статистике: %d", len(statisticsRequestCount)))
-	// 		pruneUint8Channel(statisticsRequestCount)
-	// 	}
-	// }()
-
 	return client
 }
 
-// pruneUint8Channel
-// func pruneUint8Channel(ch chan uint8) {
-// 	for i := 0; i < len(ch); i++ {
-// 		<-ch
-// 	}
-// }
-
 // Ping проверяет доступность API WB
 func (c Client) Ping() error {
+	if err := c.analyticsPing(); err != nil {
+		return err
+	}
+
 	if err := c.contentPing(); err != nil {
 		return err
 	}
@@ -106,11 +91,16 @@ func (c Client) Ping() error {
 		return err
 	}
 
-	if err := c.statisticsPing(); err != nil {
-		return err
-	}
-
 	return nil
+}
+
+// analyticsPing проверяет доступность API Analytics
+func (c Client) analyticsPing() error {
+	c.logger.Debug("Проверка достпности API аналитики")
+
+	url := fmt.Sprintf("%s/%s", c.baseURL.content, analyticsPathPing)
+
+	return c.requestPing(url, analyticsRequestTicker)
 }
 
 // contentPing проверяет доступность API Content
@@ -228,13 +218,13 @@ func (c Client) httpRequest(req *http.Request) (*http.Response, error) {
 }
 
 // respCodeCheck проверяет HTTP ответ на коды отличные от 200
-func respCodeCheck(res *http.Response) error {
+func respCodeCheck(res *http.Response) (int, error) {
 	var buf bytes.Buffer
 	tee := io.TeeReader(res.Body, &buf)
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("code: %d, body: %s", res.StatusCode, tee)
+		return res.StatusCode, fmt.Errorf("code: %d, body: %s", res.StatusCode, tee)
 	}
 
-	return nil
+	return res.StatusCode, nil
 }
